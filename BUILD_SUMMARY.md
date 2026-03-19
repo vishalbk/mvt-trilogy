@@ -302,7 +302,9 @@ GITHUB_REPO=your-repo
 
 # Claude
 ANTHROPIC_API_KEY=...
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+CLAUDE_MODEL=claude-opus-4-6           # Opus for brainstorming/orchestration
+CLAUDE_MODEL_REASONING=claude-opus-4-6  # Opus for complex reasoning
+CLAUDE_MODEL_CODING=claude-sonnet-4-6   # Sonnet for code generation
 
 # AWS
 AWS_REGION=us-east-1

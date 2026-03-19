@@ -356,8 +356,9 @@ class CodeAgent:
         prompt = self._build_generation_prompt(story, story_type, repo_context)
 
         try:
+            # Code Agent uses Sonnet for fast, accurate code generation
             message = self.claude.messages.create(
-                model=self.config["claude"].model,
+                model=self.config["claude"].model_coding,
                 max_tokens=self.config["claude"].max_tokens,
                 messages=[
                     {"role": "user", "content": prompt}

@@ -670,10 +670,15 @@ Be thorough and ensure all acceptance criteria are met.
 """
 
     async def _call_claude_agent(self, prompt: str, agent_type: str) -> Dict[str, Any]:
-        """Call Claude API for story execution."""
+        """Call Claude API for story execution.
+
+        Uses Opus for orchestration/planning tasks, Sonnet for code generation.
+        """
         try:
+            # Orchestrator uses Opus for reasoning-heavy tasks
+            model = self.config["claude"].model_reasoning
             message = self.claude.messages.create(
-                model=self.config["claude"].model,
+                model=model,
                 max_tokens=self.config["claude"].max_tokens,
                 messages=[
                     {"role": "user", "content": prompt}

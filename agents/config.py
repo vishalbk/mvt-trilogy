@@ -50,10 +50,19 @@ class TelegramConfig:
 
 @dataclass
 class ClaudeConfig:
-    """Claude API configuration."""
+    """Claude API configuration.
+
+    Model selection strategy:
+    - Opus 4.6 (claude-opus-4-6): Brainstorming, orchestration, architecture decisions,
+      sprint planning, complex reasoning. Used by Master Orchestrator and Docs Agent.
+    - Sonnet 4.6 (claude-sonnet-4-6): Code generation, testing, security analysis.
+      Used by Code Agent, Test Agent, and Deploy Agent.
+    """
     api_key: str
-    model: str = "claude-3-5-sonnet-20241022"
-    max_tokens: int = 4096
+    model: str = "claude-sonnet-4-6"               # Default: Sonnet for most tasks
+    model_reasoning: str = "claude-opus-4-6"        # Opus for brainstorming/orchestration
+    model_coding: str = "claude-sonnet-4-6"         # Sonnet for code generation
+    max_tokens: int = 8192
     temperature: float = 0.7
 
 
@@ -132,7 +141,9 @@ def load_config() -> Dict:
         ),
         "claude": ClaudeConfig(
             api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            model=os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
+            model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
+            model_reasoning=os.getenv("CLAUDE_MODEL_REASONING", "claude-opus-4-6"),
+            model_coding=os.getenv("CLAUDE_MODEL_CODING", "claude-sonnet-4-6"),
         ),
         "dynamodb": DynamoDBConfig(
             table_name=os.getenv("CONVERSATION_TABLE", "mvt-conversations"),
