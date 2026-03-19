@@ -1,8 +1,10 @@
 import json
 import os
+import urllib.request
+import urllib.error
+import time
 from datetime import datetime, timedelta
 import boto3
-import yfinance as yf
 import logging
 
 logger = logging.getLogger()
@@ -14,89 +16,97 @@ events = boto3.client('events')
 SIGNALS_TABLE = os.environ.get('SIGNALS_TABLE')
 EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME')
 
-# Risk gauge tickers
-RISK_TICKERS = {
-    '^VIX': 'fear_gauge',
-    'GLD': 'gold_etf',
-    'TLT': 'treasury_etf',
-    'VWOB': 'em_bond_etf',
-    'EMB': 'em_bond_etf'
-}
-
-# Currency pairs
-FX_PAIRS = {
-    'USDBRL=X': 'USD/BRL',
-    'USDTRY=X': 'USD/TRY',
-    'USDARS=X': 'USD/ARS',
-    'USDEGP=X': 'USD/EGP',
-    'USDPKR=X': 'USD/PKR',
-    'USDNGN=X': 'USD/NGN',
-    'USDZAR=X': 'USD/ZAR',
-    'USDMXN=X': 'USD/MXN',
-    'USDIDR=X': 'USD/IDR',
-    'USDINR=X': 'USD/INR'
+# Tickers to fetch
+TICKERS = {
+    '%5EVIX': {'dashboard': 'sentiment_seismic', 'name': 'VIX'},
+    'GC%3DF': {'dashboard': 'sentiment_seismic', 'name': 'Gold'},
+    'VWOB': {'dashboard': 'sovereign_dominoes', 'name': 'EM ETF'}
 }
 
 
-def fetch_price_data(ticker: str, max_retries: int = 3) -> dict:
-    """Fetch price data for a ticker using yfinance."""
+def fetch_price_data(ticker_encoded: str, ticker_name: str, max_retries: int = 3) -> dict:
+    """Fetch latest price from Yahoo Finance v8 API."""
     for attempt in range(max_retries):
         try:
-            data = yf.Ticker(ticker)
-            hist = data.history(period='30d')
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_encoded}?range=1d&interval=1m"
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
 
-            if len(hist) < 2:
-                logger.warning(f"Insufficient data for {ticker}")
-                return {}
+                if data.get('chart', {}).get('result'):
+                    result = data['chart']['result'][0]
+                    quotes = result.get('timestamp', [])
+                    closes = result.get('indicators', {}).get('quote', [{}])[0].get('close', [])
 
-            current_price = hist['Close'].iloc[-1]
-            prev_price = hist['Close'].iloc[-2]
-            price_30d_ago = hist['Close'].iloc[0]
+                    # Get latest valid close price
+                    for i in range(len(closes) - 1, -1, -1):
+                        if closes[i] is not None:
+                            return {
+                                'success': True,
+                                'price': float(closes[i]),
+                                'timestamp': quotes[i] if i < len(quotes) else 0
+                            }
 
-            daily_change_pct = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
-            monthly_change_pct = ((current_price - price_30d_ago) / price_30d_ago * 100) if price_30d_ago != 0 else 0
+                logger.warning(f"No valid price data for {ticker_name}")
+                return {'success': False}
 
-            return {
-                'success': True,
-                'current_price': float(current_price),
-                'daily_change_pct': float(daily_change_pct),
-                'monthly_change_pct': float(monthly_change_pct)
-            }
-
-        except Exception as e:
-            logger.warning(f"Attempt {attempt + 1} failed for {ticker}: {str(e)}")
+        except urllib.error.URLError as e:
+            logger.warning(f"Attempt {attempt + 1} failed for {ticker_name}: {str(e)}")
             if attempt < max_retries - 1:
                 continue
-            logger.error(f"Failed to fetch data for {ticker} after {max_retries} attempts")
             return {'success': False, 'error': str(e)}
 
+    return {'success': False}
 
-def write_to_dynamodb(ticker: str, price_data: dict, dashboard: str, timestamp: str) -> None:
+
+def price_to_signal_value(ticker_name: str, price: float) -> float:
+    """
+    Convert raw price to 0-100 signal value.
+    VIX: scale 10-30 to 0-100
+    Gold: scale 1500-2100 to 0-100
+    EM ETF: scale 40-60 to 0-100
+    """
+    if ticker_name == 'VIX':
+        # VIX 10-30 normalized to 0-100
+        return max(0, min(100, (price - 10) / 20.0 * 100))
+    elif ticker_name == 'Gold':
+        # Gold 1500-2100 normalized to 0-100
+        return max(0, min(100, (price - 1500) / 600.0 * 100))
+    elif ticker_name == 'EM ETF':
+        # EM ETF 40-60 normalized to 0-100
+        return max(0, min(100, (price - 40) / 20.0 * 100))
+    else:
+        # Default: raw price as percentage (0-100)
+        return max(0, min(100, price))
+
+
+def write_to_dynamodb(ticker_name: str, price: float, signal_value: float, dashboard: str) -> None:
     """Write price data to DynamoDB."""
-    if not price_data.get('success'):
-        logger.warning(f"Skipping write for {ticker} due to fetch failure")
-        return
-
     table = dynamodb.Table(SIGNALS_TABLE)
-    ttl_timestamp = int((datetime.utcnow() + timedelta(days=30)).timestamp())
+    ttl_timestamp = int(time.time()) + 30*86400
+    timestamp = datetime.utcnow().isoformat()
 
     try:
+        signal_id = f"yahoo#{ticker_name}#{int(time.time())}"
         item = {
             'dashboard': dashboard,
-            'sort_key': f"yfinance#{ticker}#{timestamp}",
-            'source': 'yfinance',
-            'ticker': ticker,
-            'current_price': price_data['current_price'],
-            'daily_change_pct': price_data['daily_change_pct'],
-            'monthly_change_pct': price_data['monthly_change_pct'],
-            'raw_data': json.dumps(price_data),
-            'ttl': ttl_timestamp,
-            'timestamp': timestamp
+            'signalId_timestamp': signal_id,
+            'source': 'yahoo',
+            'value': signal_value,
+            'raw_data': {
+                'ticker': ticker_name,
+                'price': price,
+                'signal_value': signal_value
+            },
+            'ttl': ttl_timestamp
         }
         table.put_item(Item=item)
-        logger.info(f"Wrote data for {ticker} to {dashboard}")
+        logger.info(f"Wrote {ticker_name}: price={price}, signal={signal_value}")
     except Exception as e:
-        logger.error(f"Error writing {ticker} to DynamoDB: {str(e)}")
+        logger.error(f"Error writing {ticker_name} to DynamoDB: {str(e)}")
 
 
 def publish_event(tickers_processed: list, timestamp: str) -> None:
@@ -108,63 +118,57 @@ def publish_event(tickers_processed: list, timestamp: str) -> None:
             'EventBusName': EVENT_BUS_NAME,
             'Detail': json.dumps({
                 'tickers_processed': tickers_processed,
+                'count': len(tickers_processed),
                 'timestamp': timestamp
             })
         }
         events.put_events(Entries=[event])
-        logger.info(f"Published PriceDataUpdated event for {len(tickers_processed)} tickers")
+        logger.info(f"Published PriceDataUpdated for {len(tickers_processed)} tickers")
     except Exception as e:
         logger.error(f"Error publishing event: {str(e)}")
-        raise
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """Main Lambda handler."""
-    logger.info("Starting yfinance market data streamer")
+    logger.info("Starting Yahoo Finance data streamer")
 
     try:
         timestamp = datetime.utcnow().isoformat()
         tickers_processed = []
 
-        # Process risk gauge tickers (sentiment_seismic dashboard)
-        logger.info("Processing risk gauge tickers")
-        for ticker, ticker_type in RISK_TICKERS.items():
-            price_data = fetch_price_data(ticker)
-            if price_data.get('success'):
-                write_to_dynamodb(ticker, price_data, 'sentiment_seismic', timestamp)
-                tickers_processed.append(ticker)
-            else:
-                logger.error(f"Failed to fetch {ticker}")
+        for ticker_encoded, config in TICKERS.items():
+            try:
+                logger.info(f"Fetching {config['name']}")
+                price_data = fetch_price_data(ticker_encoded, config['name'])
 
-        # Process FX pairs (sovereign_dominoes dashboard)
-        logger.info("Processing currency pairs")
-        for ticker, pair_name in FX_PAIRS.items():
-            price_data = fetch_price_data(ticker)
-            if price_data.get('success'):
-                write_to_dynamodb(ticker, price_data, 'sovereign_dominoes', timestamp)
-                tickers_processed.append(ticker)
-            else:
-                logger.error(f"Failed to fetch {ticker}")
+                if price_data.get('success'):
+                    price = price_data['price']
+                    signal_value = price_to_signal_value(config['name'], price)
+                    write_to_dynamodb(config['name'], price, signal_value, config['dashboard'])
+                    tickers_processed.append(config['name'])
+                else:
+                    logger.warning(f"Failed to fetch {config['name']}")
+            except Exception as e:
+                logger.error(f"Error processing {config['name']}: {str(e)}")
 
         if tickers_processed:
             publish_event(tickers_processed, timestamp)
-
             return {
                 'statusCode': 200,
                 'body': json.dumps({
-                    'message': 'yfinance streaming completed',
+                    'message': 'Yahoo Finance streaming completed',
                     'tickers_processed': tickers_processed
                 })
             }
         else:
-            logger.error("No tickers processed successfully")
+            logger.warning("No tickers processed")
             return {
-                'statusCode': 500,
-                'body': json.dumps({'error': 'No tickers processed'})
+                'statusCode': 200,
+                'body': json.dumps({'message': 'No tickers processed', 'count': 0})
             }
 
     except Exception as e:
-        logger.error(f"Unhandled error in lambda_handler: {str(e)}")
+        logger.error(f"Unhandled error: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})

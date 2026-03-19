@@ -1,9 +1,12 @@
 import json
 import os
+import urllib.request
+import urllib.error
+import xml.etree.ElementTree as ET
+import time
 from datetime import datetime, timedelta
 import boto3
 import logging
-from pytrends.request import TrendReq
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -14,73 +17,117 @@ events = boto3.client('events')
 SIGNALS_TABLE = os.environ.get('SIGNALS_TABLE')
 EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME')
 
+GOOGLE_TRENDS_RSS_URL = 'https://trends.google.com/trends/trendingsearches/daily/rss?geo=US'
+
 DISTRESS_KEYWORDS = [
-    "can't afford rent",
-    "bankruptcy help",
-    "debt relief",
-    "food stamps application",
-    "credit card default",
-    "unemployment benefits",
-    "cost of living crisis",
-    "paycheck to paycheck",
-    "eviction notice",
-    "medical debt",
-    "student loan default",
-    "wage garnishment"
+    'afford rent',
+    'bankruptcy',
+    'debt relief',
+    'food stamps',
+    'credit card debt',
+    'unemployment',
+    'cost of living',
+    'paycheck',
+    'eviction',
+    'medical debt',
+    'student loan',
+    'wage'
 ]
 
 
-def fetch_trends_data(keywords: list, max_retries: int = 3) -> dict:
-    """Fetch Google Trends data using pytrends."""
+def fetch_trends_feed(max_retries: int = 3) -> list:
+    """Fetch Google Trends RSS feed."""
     for attempt in range(max_retries):
         try:
-            pytrends = TrendReq(hl='en-US', tz=360)
+            req = urllib.request.Request(
+                GOOGLE_TRENDS_RSS_URL,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                xml_data = response.read().decode('utf-8')
+                root = ET.fromstring(xml_data)
 
-            # Fetch interest over time for all keywords
-            pytrends.build_payload(keywords, cat=0, timeframe='today 12-m', geo='US')
-            interest_over_time = pytrends.interest_over_time()
+                # Parse RSS items
+                items = []
+                for item in root.findall('.//item'):
+                    title_elem = item.find('title')
+                    traffic_elem = item.find('ht:approxTraffic')
 
-            # Fetch interest by region
-            pytrends.build_payload(keywords, cat=0, timeframe='today 12-m', geo='US')
-            interest_by_region = pytrends.interest_by_region()
+                    if title_elem is not None:
+                        items.append({
+                            'title': title_elem.text or '',
+                            'traffic': traffic_elem.text if traffic_elem is not None else '0'
+                        })
 
-            return {
-                'interest_over_time': interest_over_time.to_dict(),
-                'interest_by_region': interest_by_region.to_dict(),
-                'success': True
-            }
-        except Exception as e:
-            logger.warning(f"Attempt {attempt + 1} failed to fetch trends: {str(e)}")
+                return items[:20]
+        except (urllib.error.URLError, ET.ParseError) as e:
+            logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
                 continue
-            logger.error(f"Failed to fetch trends after {max_retries} attempts: {str(e)}")
-            return {'success': False, 'error': str(e)}
+            return []
+    return []
 
 
-def write_to_dynamodb(keywords_data: dict) -> None:
-    """Write trends data to DynamoDB."""
+def compute_distress_score(trending_searches: list) -> float:
+    """
+    Compute inequality distress score (0-100).
+    Count how many trending searches match distress keywords.
+    """
+    distress_count = 0
+    total_count = len(trending_searches)
+
+    for search in trending_searches:
+        title = search.get('title', '').lower()
+        for keyword in DISTRESS_KEYWORDS:
+            if keyword in title:
+                distress_count += 1
+                break
+
+    if total_count == 0:
+        return 50.0
+
+    # Scale distress_count to 0-100
+    return (distress_count / total_count) * 100
+
+
+def write_to_dynamodb(trends_data: list) -> None:
+    """Write trending searches to DynamoDB."""
     table = dynamodb.Table(SIGNALS_TABLE)
-    ttl_timestamp = int((datetime.utcnow() + timedelta(days=30)).timestamp())
+    ttl_timestamp = int(time.time()) + 30*86400
     timestamp = datetime.utcnow().isoformat()
 
     with table.batch_writer(batch_size=25) as batch:
-        for keyword in DISTRESS_KEYWORDS:
+        for idx, trend in enumerate(trends_data):
             try:
+                title = trend.get('title', 'Unknown')
+                traffic = int(trend.get('traffic', '0').replace('+', '').replace('K', '000'))
+
+                # Check if it's a distress-related search
+                is_distress = any(kw in title.lower() for kw in DISTRESS_KEYWORDS)
+                signal_value = 75.0 if is_distress else 25.0
+
+                signal_id = f"trends#{title}#{int(time.time())}"
+
                 item = {
                     'dashboard': 'inequality_pulse',
-                    'sort_key': f"trends#{keyword}#{timestamp}",
-                    'source': 'google_trends',
-                    'keyword': keyword,
-                    'raw_data': json.dumps(keywords_data),
-                    'ttl': ttl_timestamp,
-                    'timestamp': timestamp
+                    'signalId_timestamp': signal_id,
+                    'source': 'trends',
+                    'value': signal_value,
+                    'raw_data': {
+                        'title': title,
+                        'traffic': traffic,
+                        'is_distress': is_distress,
+                        'signal_value': signal_value
+                    },
+                    'ttl': ttl_timestamp
                 }
                 batch.put_item(Item=item)
+                logger.info(f"Wrote trend: {title} (distress={is_distress}, signal={signal_value})")
             except Exception as e:
-                logger.error(f"Error writing trends data for {keyword}: {str(e)}")
+                logger.error(f"Error writing trend {idx}: {str(e)}")
 
 
-def publish_event(timestamp: str) -> None:
+def publish_event(distress_score: float, search_count: int, timestamp: str) -> None:
     """Publish EventBridge event."""
     try:
         event = {
@@ -88,46 +135,48 @@ def publish_event(timestamp: str) -> None:
             'DetailType': 'TrendsDataUpdated',
             'EventBusName': EVENT_BUS_NAME,
             'Detail': json.dumps({
-                'keywords_count': len(DISTRESS_KEYWORDS),
+                'distress_score': distress_score,
+                'search_count': search_count,
                 'timestamp': timestamp
             })
         }
         events.put_events(Entries=[event])
-        logger.info("Published TrendsDataUpdated event")
+        logger.info(f"Published TrendsDataUpdated: score={distress_score}, searches={search_count}")
     except Exception as e:
         logger.error(f"Error publishing event: {str(e)}")
-        raise
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """Main Lambda handler."""
     logger.info("Starting Google Trends data poller")
 
     try:
-        logger.info(f"Fetching trends for {len(DISTRESS_KEYWORDS)} keywords")
-        trends_data = fetch_trends_data(DISTRESS_KEYWORDS)
+        logger.info("Fetching Google Trends RSS")
+        trends = fetch_trends_feed()
 
-        if trends_data.get('success'):
-            write_to_dynamodb(trends_data)
+        if trends:
+            write_to_dynamodb(trends)
             timestamp = datetime.utcnow().isoformat()
-            publish_event(timestamp)
+            distress_score = compute_distress_score(trends)
+            publish_event(distress_score, len(trends), timestamp)
 
             return {
                 'statusCode': 200,
                 'body': json.dumps({
-                    'message': 'Trends polling completed successfully',
-                    'keywords_processed': len(DISTRESS_KEYWORDS)
+                    'message': 'Trends polling completed',
+                    'searches_processed': len(trends),
+                    'distress_score': distress_score
                 })
             }
         else:
-            logger.error(f"Trends fetch failed: {trends_data.get('error')}")
+            logger.warning("No trends fetched")
             return {
-                'statusCode': 500,
-                'body': json.dumps({'error': trends_data.get('error')})
+                'statusCode': 200,
+                'body': json.dumps({'message': 'No trends', 'searches_processed': 0})
             }
 
     except Exception as e:
-        logger.error(f"Unhandled error in lambda_handler: {str(e)}")
+        logger.error(f"Unhandled error: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})

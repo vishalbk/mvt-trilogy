@@ -1,6 +1,7 @@
 """
 MVT Observatory — Telegram Bot Webhook Handler
 Uses HTML parse_mode for reliable formatting (no Markdown escaping issues)
+Integrates Claude API via direct HTTP calls (no anthropic pip package)
 """
 import json
 import os
@@ -14,6 +15,8 @@ JIRA_EMAIL = os.environ.get("JIRA_EMAIL", "")
 JIRA_API_TOKEN = os.environ.get("JIRA_API_TOKEN", "")
 JIRA_PROJECT_KEY = os.environ.get("JIRA_PROJECT_KEY", "MVT")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://d2p9otbgwjwwuv.cloudfront.net")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 
 def esc(text):
@@ -63,26 +66,113 @@ def jira_api(method, endpoint, data=None):
         return {"error": str(e)}
 
 
+def call_claude_api(system_prompt, user_message, model="claude-opus-4-6", max_tokens=1024):
+    """Call Anthropic Claude API via direct HTTP request."""
+    if not ANTHROPIC_API_KEY:
+        return None
+
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": system_prompt,
+        "messages": [
+            {"role": "user", "content": user_message}
+        ]
+    }
+
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+
+    try:
+        req = urllib.request.Request(
+            ANTHROPIC_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+            if "content" in result and len(result["content"]) > 0:
+                return result["content"][0].get("text", "")
+            return None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"Claude API error {e.code}: {body}")
+        return None
+    except Exception as e:
+        print(f"Claude API error: {e}")
+        return None
+
+
 def handle_brainstorm(chat_id, topic):
     topic = topic or "Macro Vulnerability Trilogy"
     send(chat_id, f"🧠 <b>Brainstorming: {esc(topic)}</b>\n\n<i>Generating ideas using AI...</i>")
 
-    ideas = [
-        f"📌 <b>Epic: {esc(topic)} - Core Infrastructure</b>\nBuild the foundational services and data pipelines.",
-        f"📌 <b>Epic: {esc(topic)} - Real-Time Processing</b>\nImplement streaming data processing with EventBridge and Lambda.",
-        f"📌 <b>Epic: {esc(topic)} - Dashboard Visualization</b>\nCreate interactive dashboard panels with Chart.js and D3.",
-        f"📌 <b>Epic: {esc(topic)} - Alert and Notification System</b>\nBuild threshold-based alerting with SNS and Telegram.",
-    ]
+    system_prompt = """You are an expert product owner for the MVT (Macro Vulnerability Trilogy) Observatory project.
+Generate 4 structured epic ideas for the MVT Observatory project.
 
-    text = f"💡 <b>Brainstorm Results: {esc(topic)}</b>\n\n"
-    text += "\n\n".join(ideas)
-    text += "\n\n<i>Use /create_epic to turn any of these into JIRA stories.</i>"
-    send(chat_id, text)
+Each epic should:
+1. Have a clear title
+2. Include a brief description of scope
+3. Explain the business value
+
+Format each epic as:
+📌 <b>Epic Title</b>
+Description text here.
+
+Keep the tone professional and focused on dashboard/monitoring capabilities."""
+
+    response = call_claude_api(system_prompt, f"Brainstorm epic ideas for this topic: {topic}")
+
+    if response:
+        text = f"💡 <b>Brainstorm Results: {esc(topic)}</b>\n\n{response}"
+        text += "\n\n<i>Use /create_epic to turn any of these into JIRA stories.</i>"
+        send(chat_id, text)
+    else:
+        # Fallback to template if API fails
+        ideas = [
+            f"📌 <b>Epic: {esc(topic)} - Core Infrastructure</b>\nBuild the foundational services and data pipelines.",
+            f"📌 <b>Epic: {esc(topic)} - Real-Time Processing</b>\nImplement streaming data processing with EventBridge and Lambda.",
+            f"📌 <b>Epic: {esc(topic)} - Dashboard Visualization</b>\nCreate interactive dashboard panels with Chart.js and D3.",
+            f"📌 <b>Epic: {esc(topic)} - Alert and Notification System</b>\nBuild threshold-based alerting with SNS and Telegram.",
+        ]
+        text = f"💡 <b>Brainstorm Results: {esc(topic)}</b>\n\n"
+        text += "\n\n".join(ideas)
+        text += "\n\n<i>Use /create_epic to turn any of these into JIRA stories.</i>"
+        send(chat_id, text)
 
 
 def handle_create_epic(chat_id, summary):
     summary = summary or "New MVT Feature"
-    send(chat_id, f"📝 <b>Creating Epic:</b> {esc(summary)}\n<i>Creating in JIRA project {JIRA_PROJECT_KEY}...</i>")
+    send(chat_id, f"📝 <b>Creating Epic:</b> {esc(summary)}\n<i>Generating stories using Claude...</i>")
+
+    # Use Claude to generate story titles
+    system_prompt = f"""You are an expert product manager for the MVT Observatory project.
+Generate 3 specific story titles for this epic: {summary}
+
+Return ONLY the story titles, one per line, without numbering or extra formatting.
+Each title should be concise (max 80 chars) and specific to the epic."""
+
+    ai_stories = call_claude_api(system_prompt, "Generate the story titles", model="claude-sonnet-4-6", max_tokens=300)
+
+    # Parse Claude response or use defaults
+    if ai_stories:
+        story_titles = [s.strip() for s in ai_stories.split('\n') if s.strip()]
+        if len(story_titles) < 3:
+            story_titles = [
+                f"[{summary}] Data ingestion pipeline",
+                f"[{summary}] Signal processing and scoring",
+                f"[{summary}] Dashboard visualization panel",
+            ]
+    else:
+        story_titles = [
+            f"[{summary}] Data ingestion pipeline",
+            f"[{summary}] Signal processing and scoring",
+            f"[{summary}] Dashboard visualization panel",
+        ]
 
     epic_data = {
         "fields": {
@@ -102,14 +192,8 @@ def handle_create_epic(chat_id, summary):
         epic_key = result["key"]
         epic_url = f"{JIRA_BASE_URL}/browse/{epic_key}"
 
-        story_titles = [
-            f"[{summary}] Data ingestion pipeline",
-            f"[{summary}] Signal processing and scoring",
-            f"[{summary}] Dashboard visualization panel",
-        ]
-
         story_keys = []
-        for title in story_titles:
+        for title in story_titles[:3]:  # Limit to 3 stories
             s = jira_api("POST", "issue", {
                 "fields": {
                     "project": {"key": JIRA_PROJECT_KEY},
