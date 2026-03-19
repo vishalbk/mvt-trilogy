@@ -1,0 +1,38 @@
+[
+  {
+    "name": "date",
+    "type": "DATE",
+    "mode": "REQUIRED",
+    "description": "Date of the indicator"
+  },
+  {
+    "name": "country",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "ISO 3166-1 alpha-3 country code"
+  },
+  {
+    "name": "indicator",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Indicator name (e.g., state_fragility, conflict_intensity)"
+  },
+  {
+    "name": "value",
+    "type": "FLOAT64",
+    "mode": "REQUIRED",
+    "description": "Numeric value of the indicator"
+  },
+  {
+    "name": "risk_score",
+    "type": "FLOAT64",
+    "mode": "REQUIRED",
+    "description": "Computed risk score (0-100 scale)"
+  },
+  {
+    "name": "ingested_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Timestamp when record was ingested"
+  }
+]

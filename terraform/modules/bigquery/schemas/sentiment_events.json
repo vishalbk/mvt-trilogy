@@ -1,0 +1,44 @@
+[
+  {
+    "name": "date",
+    "type": "DATE",
+    "mode": "REQUIRED",
+    "description": "Date of the sentiment event"
+  },
+  {
+    "name": "event_type",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Type of event (e.g., protest, riot, strike, boycott)"
+  },
+  {
+    "name": "severity",
+    "type": "FLOAT64",
+    "mode": "REQUIRED",
+    "description": "Severity score (0-1 scale)"
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Source of the event data (e.g., news API, social media, GDELT)"
+  },
+  {
+    "name": "countries",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "List of country codes affected"
+  },
+  {
+    "name": "raw_json",
+    "type": "JSON",
+    "mode": "NULLABLE",
+    "description": "Raw JSON payload from source"
+  },
+  {
+    "name": "ingested_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Timestamp when record was ingested"
+  }
+]

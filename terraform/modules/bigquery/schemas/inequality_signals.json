@@ -1,0 +1,44 @@
+[
+  {
+    "name": "date",
+    "type": "DATE",
+    "mode": "REQUIRED",
+    "description": "Date of the signal"
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Source of the inequality signal (e.g., World Bank, UN, IMF)"
+  },
+  {
+    "name": "metric",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Name of the metric (e.g., gini_coefficient, poverty_rate)"
+  },
+  {
+    "name": "value",
+    "type": "FLOAT64",
+    "mode": "REQUIRED",
+    "description": "Numeric value of the metric"
+  },
+  {
+    "name": "region",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Geographic region or country code"
+  },
+  {
+    "name": "raw_json",
+    "type": "JSON",
+    "mode": "NULLABLE",
+    "description": "Raw JSON payload from source"
+  },
+  {
+    "name": "ingested_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Timestamp when record was ingested into BigQuery"
+  }
+]

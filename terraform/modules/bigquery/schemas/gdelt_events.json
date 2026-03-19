@@ -1,0 +1,86 @@
+[
+  {
+    "name": "date",
+    "type": "DATE",
+    "mode": "REQUIRED",
+    "description": "Date of the GDELT event"
+  },
+  {
+    "name": "event_code",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "GDELT event root code (e.g., 14-Protest, 17-Attempt to assassinate)"
+  },
+  {
+    "name": "event_root_code",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Event root code category"
+  },
+  {
+    "name": "actor1_country",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Country code of first actor"
+  },
+  {
+    "name": "actor2_country",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Country code of second actor"
+  },
+  {
+    "name": "goldstein_scale",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Goldstein scale score (-10 to +10)"
+  },
+  {
+    "name": "num_mentions",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Number of mentions in source articles"
+  },
+  {
+    "name": "num_sources",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Number of unique sources"
+  },
+  {
+    "name": "num_articles",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Number of articles"
+  },
+  {
+    "name": "avg_tone",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Average tone of articles (-100 to +100)"
+  },
+  {
+    "name": "action_geo_country",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Country where action occurred"
+  },
+  {
+    "name": "action_geo_lat",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Latitude of action"
+  },
+  {
+    "name": "action_geo_long",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Longitude of action"
+  },
+  {
+    "name": "ingested_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Timestamp when record was ingested"
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "name": "mvt-trilogy",
+  "version": "1.0.0",
+  "description": "Macro Vulnerability Trilogy — AI Agent-Built FinTech Observatory",
+  "private": true,
+  "workspaces": [
+    "cdk",
+    "frontend",
+    "telegram-bot"
+  ],
+  "scripts": {
+    "cdk:synth": "cd cdk && npx cdk synth",
+    "cdk:deploy": "cd cdk && npx cdk deploy --all",
+    "cdk:diff": "cd cdk && npx cdk diff",
+    "tf:init": "cd terraform && terraform init",
+    "tf:plan": "cd terraform && terraform plan",
+    "tf:apply": "cd terraform && terraform apply",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "mvt-realtime-handlers",
+  "version": "1.0.0",
+  "description": "WebSocket handlers for MVT Trilogy realtime dashboards",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.400.0",
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.400.0",
+    "@aws-sdk/util-dynamodb": "^3.400.0",
+    "aws-lambda": "^1.0.7"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.120",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

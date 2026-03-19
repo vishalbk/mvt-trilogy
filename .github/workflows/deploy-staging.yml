@@ -1,0 +1,204 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  GCP_REGION: us-central1
+  STAGING_SUFFIX: staging
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: |
+          npm run test:unit
+          pytest tests/unit/ -v
+
+      - name: Build artifacts
+        run: npm run build
+
+  deploy-gcp-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Deploy GCP to Staging
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v1
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform plan
+        run: |
+          cd terraform
+          terraform init -backend-config="bucket=${{ secrets.GCP_TERRAFORM_BUCKET }}" \
+                        -backend-config="prefix=staging"
+          terraform plan -var-file="environments/dev.tfvars" \
+                        -var="environment=staging" \
+                        -out=tfplan
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID_STAGING }}
+          TF_VAR_aws_event_relay_endpoint: ${{ secrets.AWS_EVENT_RELAY_ENDPOINT }}
+
+      - name: Terraform apply
+        run: |
+          cd terraform
+          terraform apply tfplan
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID_STAGING }}
+
+      - name: Capture outputs
+        id: tf-outputs
+        run: |
+          cd terraform
+          echo "pubsub_signals_topic=$(terraform output -raw pubsub_signals_topic)" >> $GITHUB_OUTPUT
+          echo "bigquery_dataset=$(terraform output -raw bigquery_dataset_id)" >> $GITHUB_OUTPUT
+          echo "hosting_url=$(terraform output -raw firebase_hosting_url)" >> $GITHUB_OUTPUT
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID_STAGING }}
+
+  deploy-cdk-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Deploy AWS CDK to Staging
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: npm install -g aws-cdk && npm ci
+
+      - name: CDK synth
+        run: cdk synth
+        working-directory: cdk/
+
+      - name: CDK deploy to staging
+        run: cdk deploy --all --require-approval never
+        working-directory: cdk/
+        env:
+          ENVIRONMENT: staging
+
+  integration-tests:
+    needs:
+      - deploy-gcp-staging
+      - deploy-cdk-staging
+    runs-on: ubuntu-latest
+    name: Integration Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_STAGING }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          STAGING_URLS: ${{ needs.deploy-gcp-staging.outputs.hosting_url }}
+
+  notify-results:
+    if: always()
+    needs:
+      - test
+      - deploy-gcp-staging
+      - deploy-cdk-staging
+      - integration-tests
+    runs-on: ubuntu-latest
+    name: Notify Results
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine overall status
+        id: status
+        run: |
+          if [[ "${{ needs.test.result }}" == "success" && \
+                "${{ needs.deploy-gcp-staging.result }}" == "success" && \
+                "${{ needs.deploy-cdk-staging.result }}" == "success" && \
+                "${{ needs.integration-tests.result }}" == "success" ]]; then
+            echo "overall=success" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+          else
+            echo "overall=failure" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update JIRA with staging deployment
+        if: steps.status.outputs.overall == 'success'
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "body": "Staging deployment successful: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }' \
+            "${{ secrets.JIRA_ISSUE_URL }}/comment"
+        continue-on-error: true
+
+      - name: Notify Telegram
+        run: |
+          curl -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="${{ steps.status.outputs.emoji }} Staging deployment ${{ steps.status.outputs.overall }}: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        continue-on-error: true

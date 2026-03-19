@@ -1,0 +1,11 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": ["README.md", "node_modules", "dist", "**/*.js", "**/*.d.ts"]
+  },
+  "context": {
+    "@aws-cdk/core:stackRelativeExports": true,
+    "environment": "dev"
+  }
+}

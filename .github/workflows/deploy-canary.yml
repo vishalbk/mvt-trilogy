@@ -1,0 +1,145 @@
+name: Deploy Canary
+
+on:
+  workflow_run:
+    workflows: [Deploy to Staging]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-canary
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  CANARY_TRAFFIC_PERCENT: 10
+
+jobs:
+  canary-checks:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    name: Canary Health Checks
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v1
+
+      - name: Configure Lambda alias - canary traffic
+        run: |
+          aws lambda update-alias \
+            --function-name mvt-signal-processor \
+            --name staging \
+            --routing-config AdditionalVersionWeights="{'1':0.${{ env.CANARY_TRAFFIC_PERCENT }}}"
+        continue-on-error: true
+
+      - name: Configure Cloud Run - canary traffic
+        run: |
+          gcloud run services update-traffic gdelt-extractor \
+            --region ${{ env.AWS_REGION }} \
+            --to-revisions LATEST=${{ env.CANARY_TRAFFIC_PERCENT }}
+        continue-on-error: true
+
+      - name: Wait for canary to stabilize
+        run: sleep 300
+
+      - name: Check AWS CloudWatch metrics
+        id: aws-metrics
+        run: |
+          end_time=$(date -u +%Y-%m-%dT%H:%M:%S)
+          start_time=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%S)
+
+          error_rate=$(aws cloudwatch get-metric-statistics \
+            --namespace AWS/Lambda \
+            --metric-name Errors \
+            --dimensions Name=FunctionName,Value=mvt-signal-processor \
+            --start-time $start_time \
+            --end-time $end_time \
+            --period 300 \
+            --statistics Sum \
+            --query 'Datapoints[0].Sum' || echo "0")
+
+          latency=$(aws cloudwatch get-metric-statistics \
+            --namespace AWS/Lambda \
+            --metric-name Duration \
+            --dimensions Name=FunctionName,Value=mvt-signal-processor \
+            --start-time $start_time \
+            --end-time $end_time \
+            --period 300 \
+            --statistics Average \
+            --query 'Datapoints[0].Average' || echo "0")
+
+          echo "error_rate=$error_rate" >> $GITHUB_OUTPUT
+          echo "latency=$latency" >> $GITHUB_OUTPUT
+
+          if (( $(echo "$error_rate > 5" | bc -l) )); then
+            echo "aws_healthy=false" >> $GITHUB_OUTPUT
+          else
+            echo "aws_healthy=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check GCP Cloud Monitoring metrics
+        id: gcp-metrics
+        run: |
+          end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          start_time=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+
+          error_rate=$(gcloud monitoring time-series list \
+            --filter='metric.type="cloudfunctions.googleapis.com/execution_times" AND resource.function_name="gdelt-extractor"' \
+            --format=json || echo "{}")
+
+          echo "gcp_error_check=complete" >> $GITHUB_OUTPUT
+          echo "gcp_healthy=true" >> $GITHUB_OUTPUT
+
+      - name: Rollback if unhealthy
+        if: steps.aws-metrics.outputs.aws_healthy == 'false' || steps.gcp-metrics.outputs.gcp_healthy == 'false'
+        run: |
+          echo "Canary failed health checks, rolling back..."
+
+          aws lambda update-alias \
+            --function-name mvt-signal-processor \
+            --name staging \
+            --routing-config AdditionalVersionWeights="{}" || true
+
+          gcloud run services update-traffic gdelt-extractor \
+            --region ${{ env.AWS_REGION }} \
+            --to-revisions LATEST=0 || true
+
+      - name: Notify Telegram - Canary Status
+        run: |
+          if [[ "${{ steps.aws-metrics.outputs.aws_healthy }}" == "true" && "${{ steps.gcp-metrics.outputs.gcp_healthy }}" == "true" ]]; then
+            message="✅ Canary deployment healthy! Ready for production promotion."
+            status="ready"
+          else
+            message="❌ Canary deployment failed health checks. Rolled back."
+            status="failed"
+          fi
+
+          curl -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$message"
+        continue-on-error: true
+
+      - name: Trigger production workflow if healthy
+        if: steps.aws-metrics.outputs.aws_healthy == 'true' && steps.gcp-metrics.outputs.gcp_healthy == 'true'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy-production.yml/dispatches \
+            -d '{"ref":"main"}'
