@@ -2,7 +2,8 @@ import json
 import os
 import urllib.request
 import urllib.error
-import base64
+import xml.etree.ElementTree as ET
+import time
 from datetime import datetime, timedelta
 import boto3
 import logging
@@ -15,122 +16,97 @@ events = boto3.client('events')
 
 SIGNALS_TABLE = os.environ.get('SIGNALS_TABLE')
 EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME')
-GCP_SA_KEY_B64 = os.environ.get('GCP_SA_KEY')
 
-CONFLICT_EVENT_CODES = ['14', '17', '18', '19', '20']  # Conflict, sanctions, threats
-SOVEREIGN_EVENT_CODES = ['19', '20']  # Sanctions, threats
+GDELT_BASE_URL = 'http://api.gdeltproject.org/api/v2/doc/doc'
 
-GDELT_BASE_URL = 'https://www.googleapis.com/bigquery/v2'
+CRISIS_KEYWORDS = ['economic crisis', 'financial crisis', 'debt crisis', 'recession', 'collapse', 'default', 'sanctions']
 
 
-def get_gcp_access_token() -> str:
-    """Get GCP access token using service account key."""
-    try:
-        if not GCP_SA_KEY_B64:
-            raise ValueError("GCP_SA_KEY environment variable not set")
-
-        sa_key = json.loads(base64.b64decode(GCP_SA_KEY_B64))
-
-        # Use service account to get access token
-        # This is a simplified approach - in production, use google-auth library
-        logger.info("Using GCP service account for authentication")
-        return sa_key.get('private_key', '')
-
-    except Exception as e:
-        logger.error(f"Error getting GCP access token: {str(e)}")
-        raise
-
-
-def query_gdelt_events(access_token: str, max_retries: int = 3) -> list:
-    """Query GDELT events from BigQuery."""
+def fetch_gdelt_events(max_retries: int = 3) -> list:
+    """Fetch GDELT GKG events using public API."""
     for attempt in range(max_retries):
         try:
-            # Calculate lookback window (past 15 minutes)
-            end_time = datetime.utcnow()
-            start_time = end_time - timedelta(minutes=15)
-            start_date = start_time.strftime('%Y%m%d')
-
-            # Build SQL query for conflict and sanctions events
-            sql_query = f"""
-            SELECT SQLDATE, EventCode, Actor1CountryCode, Actor2CountryCode,
-                   GoldsteinScale, NumMentions, AvgTone
-            FROM `gdelt-bq.gdeltv2.events`
-            WHERE SQLDATE >= {start_date}
-            AND EventRootCode IN ('14','17','18','19','20')
-            """
-
-            query_request = {
-                'query': sql_query,
-                'useLegacySql': False,
-                'location': 'US'
-            }
-
-            logger.info(f"Executing GDELT query for date {start_date}")
-
-            # In production, use google-cloud-bigquery library
-            # This is a placeholder for the API call structure
-            logger.info(f"GDELT query executed (simulated)")
-            return []
-
-        except Exception as e:
-            logger.warning(f"Attempt {attempt + 1} failed to query GDELT: {str(e)}")
+            url = f"{GDELT_BASE_URL}?query=economic%20crisis&mode=artlist&maxrecords=10&format=json"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                articles = data.get('articles', []) if isinstance(data, dict) else []
+                return articles[:10]
+        except urllib.error.URLError as e:
+            logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
                 continue
-            logger.error(f"Failed to query GDELT after {max_retries} attempts: {str(e)}")
             return []
+    return []
 
 
-def write_to_dynamodb(events_data: list, dashboard: str, timestamp: str) -> None:
-    """Write GDELT events to DynamoDB."""
+def compute_event_sentiment(article: dict) -> float:
+    """
+    Compute sentiment score (0-100) based on article content.
+    Check for crisis keywords in title and description.
+    """
+    title = article.get('title', '').lower()
+    description = article.get('description', '').lower()
+    content = title + ' ' + description
+
+    crisis_count = sum(1 for kw in CRISIS_KEYWORDS if kw in content)
+
+    # More crisis keywords = higher score (worse sentiment)
+    if crisis_count == 0:
+        return 30.0
+    elif crisis_count == 1:
+        return 55.0
+    elif crisis_count == 2:
+        return 75.0
+    else:
+        return 90.0
+
+
+def write_to_dynamodb(articles: list) -> None:
+    """Write GDELT articles to DynamoDB."""
     table = dynamodb.Table(SIGNALS_TABLE)
-    ttl_timestamp = int((datetime.utcnow() + timedelta(days=30)).timestamp())
+    ttl_timestamp = int(time.time()) + 30*86400
+    timestamp = datetime.utcnow().isoformat()
 
     with table.batch_writer(batch_size=25) as batch:
-        for idx, event_item in enumerate(events_data):
+        for idx, article in enumerate(articles):
             try:
-                event_code = event_item.get('EventCode', 'unknown')
+                title = article.get('title', 'Unknown')
+                url = article.get('url', '')
+                publish_date = article.get('publishdate', '0')
+
+                sentiment_score = compute_event_sentiment(article)
+                signal_id = f"gdelt#{publish_date}#{idx}"
+
                 item = {
-                    'dashboard': dashboard,
-                    'sort_key': f"gdelt#{event_code}#{timestamp}#{idx}",
+                    'dashboard': 'sentiment_seismic',
+                    'signalId_timestamp': signal_id,
                     'source': 'gdelt',
-                    'event_code': event_code,
-                    'actor1_country': event_item.get('Actor1CountryCode', ''),
-                    'actor2_country': event_item.get('Actor2CountryCode', ''),
-                    'goldstein_scale': float(event_item.get('GoldsteinScale', 0)),
-                    'num_mentions': int(event_item.get('NumMentions', 0)),
-                    'avg_tone': float(event_item.get('AvgTone', 0)),
-                    'raw_data': json.dumps(event_item),
-                    'ttl': ttl_timestamp,
-                    'timestamp': timestamp
+                    'value': sentiment_score,
+                    'raw_data': {
+                        'title': title,
+                        'url': url,
+                        'publish_date': publish_date,
+                        'sentiment_score': sentiment_score
+                    },
+                    'ttl': ttl_timestamp
                 }
                 batch.put_item(Item=item)
+                logger.info(f"Wrote GDELT article: {title[:50]}... (sentiment={sentiment_score})")
             except Exception as e:
-                logger.error(f"Error writing GDELT event: {str(e)}")
+                logger.error(f"Error writing article {idx}: {str(e)}")
 
 
-def categorize_and_write_events(events_data: list, timestamp: str) -> None:
-    """Categorize events and write to appropriate dashboards."""
-    sentiment_events = []
-    sovereign_events = []
+def compute_aggregate_sentiment(articles: list) -> float:
+    """Compute average sentiment across articles."""
+    if not articles:
+        return 50.0
 
-    for event in events_data:
-        event_code = event.get('EventCode', '')
-        if event_code in CONFLICT_EVENT_CODES:
-            sentiment_events.append(event)
-
-        if event_code in SOVEREIGN_EVENT_CODES:
-            sovereign_events.append(event)
-
-    if sentiment_events:
-        write_to_dynamodb(sentiment_events, 'sentiment_seismic', timestamp)
-        logger.info(f"Wrote {len(sentiment_events)} events to sentiment_seismic")
-
-    if sovereign_events:
-        write_to_dynamodb(sovereign_events, 'sovereign_dominoes', timestamp)
-        logger.info(f"Wrote {len(sovereign_events)} events to sovereign_dominoes")
+    scores = [compute_event_sentiment(a) for a in articles]
+    return sum(scores) / len(scores) if scores else 50.0
 
 
-def publish_event(event_count: int, timestamp: str) -> None:
+def publish_event(event_count: int, sentiment_score: float, timestamp: str) -> None:
     """Publish EventBridge event."""
     try:
         event = {
@@ -139,48 +115,47 @@ def publish_event(event_count: int, timestamp: str) -> None:
             'EventBusName': EVENT_BUS_NAME,
             'Detail': json.dumps({
                 'event_count': event_count,
+                'sentiment_score': sentiment_score,
                 'timestamp': timestamp
             })
         }
         events.put_events(Entries=[event])
-        logger.info(f"Published GDELTEventsUpdated event ({event_count} events)")
+        logger.info(f"Published GDELTEventsUpdated: {event_count} events, sentiment={sentiment_score}")
     except Exception as e:
         logger.error(f"Error publishing event: {str(e)}")
-        raise
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """Main Lambda handler."""
     logger.info("Starting GDELT event querier")
 
     try:
-        access_token = get_gcp_access_token()
-        gdelt_events = query_gdelt_events(access_token)
+        logger.info("Fetching GDELT economic crisis events")
+        articles = fetch_gdelt_events()
 
-        if gdelt_events:
+        if articles:
+            write_to_dynamodb(articles)
             timestamp = datetime.utcnow().isoformat()
-            categorize_and_write_events(gdelt_events, timestamp)
-            publish_event(len(gdelt_events), timestamp)
+            sentiment_score = compute_aggregate_sentiment(articles)
+            publish_event(len(articles), sentiment_score, timestamp)
 
             return {
                 'statusCode': 200,
                 'body': json.dumps({
                     'message': 'GDELT query completed',
-                    'events_processed': len(gdelt_events)
+                    'events_processed': len(articles),
+                    'sentiment_score': sentiment_score
                 })
             }
         else:
-            logger.info("No GDELT events found in query window")
+            logger.info("No GDELT events found")
             return {
                 'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'No GDELT events found',
-                    'events_processed': 0
-                })
+                'body': json.dumps({'message': 'No events found', 'events_processed': 0})
             }
 
     except Exception as e:
-        logger.error(f"Unhandled error in lambda_handler: {str(e)}")
+        logger.error(f"Unhandled error: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})
