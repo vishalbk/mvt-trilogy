@@ -27,8 +27,11 @@ GITHUB_ORG = os.getenv("GITHUB_ORG", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 
 # Claude Configuration
+# Telegram bot uses Opus for brainstorming (reasoning-heavy)
+# and Sonnet for structured tasks (epic/story generation)
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-6")  # Default: Opus for brainstorming
+CLAUDE_MODEL_CODING = os.getenv("CLAUDE_MODEL_CODING", "claude-sonnet-4-6")  # Sonnet for structured output
 
 # DynamoDB Configuration
 CONVERSATION_TABLE = os.getenv("CONVERSATION_TABLE", "mvt-conversations")

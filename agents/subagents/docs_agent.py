@@ -458,7 +458,7 @@ Return only wiki markup, no markdown.
 
         try:
             message = self.claude.messages.create(
-                model=self.config["claude"].model,
+                model=self.config["claude"].model_reasoning,  # Docs Agent uses Opus for rich documentation
                 max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -507,7 +507,7 @@ Return only wiki markup, no markdown.
 
         try:
             message = self.claude.messages.create(
-                model=self.config["claude"].model,
+                model=self.config["claude"].model_reasoning,  # Docs Agent uses Opus for rich documentation
                 max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -548,7 +548,7 @@ Return only wiki markup, no markdown.
 
         try:
             message = self.claude.messages.create(
-                model=self.config["claude"].model,
+                model=self.config["claude"].model_reasoning,  # Docs Agent uses Opus for rich documentation
                 max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -605,7 +605,7 @@ Return only wiki markup, no markdown.
 
         try:
             message = self.claude.messages.create(
-                model=self.config["claude"].model,
+                model=self.config["claude"].model_reasoning,  # Docs Agent uses Opus for rich documentation
                 max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}

@@ -218,7 +218,9 @@ export GITHUB_REPO="your-repo"
 
 # Claude
 export ANTHROPIC_API_KEY="..."
-export CLAUDE_MODEL="claude-3-5-sonnet-20241022"
+export CLAUDE_MODEL="claude-opus-4-6"             # Opus for brainstorming/orchestration
+export CLAUDE_MODEL_REASONING="claude-opus-4-6"    # Opus for complex reasoning
+export CLAUDE_MODEL_CODING="claude-sonnet-4-6"     # Sonnet for code generation
 
 # DynamoDB (for conversation state)
 export CONVERSATION_TABLE="mvt-conversations"

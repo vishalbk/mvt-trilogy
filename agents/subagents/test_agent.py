@@ -375,8 +375,9 @@ Return a JSON array of issues with format:
 Return only valid JSON, no other text.
 """
 
+            # Test Agent uses Sonnet for security analysis
             message = self.claude.messages.create(
-                model=self.config["claude"].model,
+                model=self.config["claude"].model_coding,
                 max_tokens=1024,
                 messages=[
                     {"role": "user", "content": prompt}
