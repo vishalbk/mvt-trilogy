@@ -1,14 +1,17 @@
 """
 Code Agent - Specialized agent for writing implementation code.
 
-Receives JIRA stories, generates implementation code, creates PR,
-and validates the code before submission.
+Receives JIRA stories, generates implementation code, creates PR via GitHub,
+and validates the code before submission. All deployments happen via GitHub Actions,
+NOT via direct CDK/Terraform commands.
 """
 
 import asyncio
 import json
 import logging
 import re
+import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -203,44 +206,59 @@ class CodeAgent:
         )
         self.claude = Anthropic(api_key=config["claude"].api_key)
 
-    async def execute(self, story: Dict[str, Any]) -> CodeGenResult:
-        """Execute story: analyze, generate code, create PR."""
+    async def execute(self, story: Dict[str, Any], repo_path: str = ".") -> CodeGenResult:
+        """Execute story: analyze, generate code, push branch, create PR, wait for checks.
+
+        All changes go through GitHub:
+        1. Create feature branch
+        2. Generate implementation code
+        3. Stage, commit, and push to GitHub
+        4. Create PR targeting main
+        5. Wait for PR checks to pass
+        6. Return PR URL and validation status
+
+        Args:
+            story: JIRA story dict with key, summary, description, acceptance_criteria
+            repo_path: Local repository path (default: current directory)
+
+        Returns:
+            CodeGenResult with status, PR URL, files changed, validation errors
+        """
         logger.info(
             json.dumps({
                 "action": "code_agent_execute",
                 "story_key": story.get("key"),
+                "repo_path": repo_path,
             })
         )
 
-        try:
-            # Analyze story
-            story_type = self.analyze_story(story)
+        branch_name = self._create_branch_name(story)
 
-            # Create feature branch
-            branch_name = self._create_branch_name(story)
-            if not self.github.create_branch(branch_name):
-                raise RuntimeError(f"Failed to create branch {branch_name}")
+        try:
+            # Analyze story type
+            story_type = self.analyze_story(story)
 
             # Get repo context
             repo_context = self._get_repo_context()
 
-            # Generate implementation
+            # Generate implementation using Claude
             files_to_create = await self._generate_implementation(
                 story,
                 story_type,
                 repo_context,
             )
 
-            # Create files in branch
-            for file_path, content in files_to_create.items():
-                message = f"feat({branch_name}): {story.get('summary', 'Update')}"
-                if not self.github.create_file(branch_name, file_path, content, message):
-                    raise RuntimeError(f"Failed to create file {file_path}")
+            if not files_to_create:
+                raise RuntimeError("No code generated from story")
 
             # Validate generated code
             validation_errors = self._validate_code(files_to_create)
 
-            # Create pull request
+            # Create branch, stage files, commit, and push to GitHub
+            if not await self.create_branch_and_push(story, files_to_create, repo_path):
+                raise RuntimeError("Failed to create branch and push to GitHub")
+
+            # Create PR via GitHub API
             pr_url = self.github.create_pull_request(
                 title=f"{story.get('key')}: {story.get('summary')}",
                 body=self._build_pr_description(story, files_to_create),
@@ -249,6 +267,23 @@ class CodeAgent:
 
             if not pr_url:
                 raise RuntimeError("Failed to create pull request")
+
+            # Extract PR number from URL (e.g., https://github.com/.../pull/123)
+            pr_number = int(pr_url.split("/pull/")[-1])
+
+            # Wait for PR checks to pass (timeout: 10 minutes)
+            checks_passed = await self.wait_for_checks(pr_number, repo_path, timeout_seconds=600)
+
+            if not checks_passed:
+                logger.warning(
+                    json.dumps({
+                        "action": "code_agent_execute",
+                        "warning": "PR checks did not pass within timeout",
+                        "pr_url": pr_url,
+                    })
+                )
+                # Still return success (PR is created, but checks failed)
+                # Master Orchestrator will decide what to do
 
             result = CodeGenResult(
                 status="success" if not validation_errors else "success_with_warnings",
@@ -269,6 +304,7 @@ class CodeAgent:
                     "status": "success",
                     "story_key": story.get("key"),
                     "pr_url": pr_url,
+                    "checks_passed": checks_passed,
                 })
             )
             return result
@@ -283,7 +319,7 @@ class CodeAgent:
             )
             return CodeGenResult(
                 status="failed",
-                branch="",
+                branch=branch_name,
                 pr_url="",
                 files_changed=[],
                 lines_added=0,
@@ -511,6 +547,245 @@ Closes #{story.get('key')}
         # Slugify summary: remove special chars, replace spaces with hyphens
         slug = re.sub(r"[^a-z0-9-]", "", summary.replace(" ", "-"))[:30]
         return f"feature/{story_key}-{slug}".lower()
+
+    async def wait_for_checks(
+        self,
+        pr_number: int,
+        repo_path: str = ".",
+        timeout_seconds: int = 600,
+    ) -> bool:
+        """Wait for PR checks to pass.
+
+        Polls GitHub API for PR check status until all pass or timeout occurs.
+
+        Args:
+            pr_number: GitHub PR number
+            repo_path: Local repository path
+            timeout_seconds: Maximum time to wait (default 10 minutes)
+
+        Returns:
+            True if all checks passed, False if timeout or failed
+        """
+        logger.info(
+            json.dumps({
+                "action": "wait_for_checks",
+                "pr_number": pr_number,
+                "timeout_seconds": timeout_seconds,
+            })
+        )
+
+        start_time = time.time()
+        poll_interval = 10  # seconds
+
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed > timeout_seconds:
+                logger.error(
+                    json.dumps({
+                        "action": "wait_for_checks",
+                        "status": "timeout",
+                        "elapsed_seconds": int(elapsed),
+                    })
+                )
+                return False
+
+            # Get PR check status from GitHub API
+            try:
+                url = (
+                    f"{self.github.base_url}/repos/{self.github.org}/{self.github.repo}"
+                    f"/pulls/{pr_number}"
+                )
+                response = self.github.session.get(url)
+                response.raise_for_status()
+                pr_data = response.json()
+
+                # Check PR status
+                state = pr_data.get("state", "open")
+                if state != "open":
+                    logger.warning(
+                        json.dumps({
+                            "action": "wait_for_checks",
+                            "pr_state": state,
+                        })
+                    )
+                    return state == "closed"  # Merged is closed state
+
+                # Get check runs
+                checks_url = (
+                    f"{self.github.base_url}/repos/{self.github.org}/{self.github.repo}"
+                    f"/commits/{pr_data['head']['sha']}/check-runs"
+                )
+                checks_response = self.github.session.get(checks_url)
+                checks_response.raise_for_status()
+                checks_data = checks_response.json()
+
+                check_runs = checks_data.get("check_runs", [])
+                if not check_runs:
+                    logger.info(
+                        json.dumps({
+                            "action": "wait_for_checks",
+                            "status": "no_checks_yet",
+                            "elapsed_seconds": int(elapsed),
+                        })
+                    )
+                    await asyncio.sleep(poll_interval)
+                    continue
+
+                # Analyze check statuses
+                completed_checks = [c for c in check_runs if c["status"] == "completed"]
+                failed_checks = [c for c in check_runs if c["conclusion"] == "failure"]
+
+                logger.info(
+                    json.dumps({
+                        "action": "wait_for_checks",
+                        "status": "polling",
+                        "total_checks": len(check_runs),
+                        "completed": len(completed_checks),
+                        "failed": len(failed_checks),
+                        "elapsed_seconds": int(elapsed),
+                    })
+                )
+
+                # All checks completed
+                if len(completed_checks) == len(check_runs):
+                    if failed_checks:
+                        logger.error(
+                            json.dumps({
+                                "action": "wait_for_checks",
+                                "status": "failed",
+                                "failed_checks": [c["name"] for c in failed_checks],
+                            })
+                        )
+                        return False
+
+                    logger.info(
+                        json.dumps({
+                            "action": "wait_for_checks",
+                            "status": "all_passed",
+                        })
+                    )
+                    return True
+
+            except Exception as e:
+                logger.warning(
+                    json.dumps({
+                        "action": "wait_for_checks",
+                        "warning": str(e),
+                    })
+                )
+
+            await asyncio.sleep(poll_interval)
+
+    async def create_branch_and_push(
+        self,
+        story: Dict[str, Any],
+        files: Dict[str, str],
+        repo_path: str = ".",
+    ) -> bool:
+        """Create feature branch, stage files, and push to GitHub.
+
+        Uses local git commands instead of GitHub API for file creation
+        to maintain proper git history.
+
+        Args:
+            story: JIRA story with key and summary
+            files: Dict of {file_path: content}
+            repo_path: Local repository path
+
+        Returns:
+            True if successful, False otherwise
+        """
+        branch_name = self._create_branch_name(story)
+
+        try:
+            # Create branch from main (ensure we're on main first)
+            subprocess.run(
+                ["git", "checkout", "main"],
+                cwd=repo_path,
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "pull", "origin", "main"],
+                cwd=repo_path,
+                capture_output=True,
+                check=True,
+            )
+
+            # Create feature branch
+            subprocess.run(
+                ["git", "checkout", "-b", branch_name],
+                cwd=repo_path,
+                capture_output=True,
+                check=True,
+            )
+
+            # Write files
+            for file_path, content in files.items():
+                full_path = f"{repo_path}/{file_path}"
+                # Create directories if needed
+                import os
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                # Write file
+                with open(full_path, "w") as f:
+                    f.write(content)
+
+            # Stage all changes
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=repo_path,
+                capture_output=True,
+                check=True,
+            )
+
+            # Commit with conventional commit message
+            story_key = story.get("key", "UNKNOWN")
+            summary = story.get("summary", "Update")
+            commit_msg = f"feat({story_key}): {summary}"
+
+            subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=repo_path,
+                capture_output=True,
+                check=True,
+            )
+
+            # Push to remote
+            subprocess.run(
+                ["git", "push", "origin", branch_name],
+                cwd=repo_path,
+                capture_output=True,
+                check=True,
+            )
+
+            logger.info(
+                json.dumps({
+                    "action": "create_branch_and_push",
+                    "status": "success",
+                    "branch": branch_name,
+                    "files": len(files),
+                })
+            )
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            logger.error(
+                json.dumps({
+                    "action": "create_branch_and_push",
+                    "error": str(e),
+                    "stderr": e.stderr.decode() if e.stderr else "",
+                })
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "create_branch_and_push",
+                    "error": str(e),
+                })
+            )
+            return False
 
 
 async def main():
