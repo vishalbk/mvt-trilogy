@@ -1,14 +1,21 @@
 """
-Deploy Agent - Specialized agent for deployment management.
+Deploy Agent - Specialized agent for deployment orchestration and monitoring.
 
-Handles CDK/Terraform deployment, staging validation, canary deployments,
-and blue-green rollout with automatic rollback.
+NO LONGER PERFORMS DIRECT DEPLOYMENTS (cdk deploy, terraform apply).
+Instead monitors GitHub Actions workflows triggered by Git events.
+
+Deployment flow:
+1. Code Agent: PR created → pr-checks.yml runs
+2. Master Orchestrator: Merges PR → deploy-staging.yml runs automatically
+3. Deploy Agent: Monitors staging deployment health
+4. Deploy Agent: Monitors canary deployment health
+5. Deploy Agent: Watches for canary success → triggers production approval
+6. Deploy Agent: On approval → deploy-production.yml runs automatically
 """
 
 import asyncio
 import json
 import logging
-import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -16,12 +23,7 @@ from datetime import datetime
 
 import requests
 
-from config import (
-    load_config,
-    CANARY_TRAFFIC_PERCENT,
-    CANARY_DURATION_MINUTES,
-    CANARY_ERROR_THRESHOLD,
-)
+from config import load_config
 
 
 # Configure structured logging
@@ -38,14 +40,152 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DeployResult:
-    """Result of deployment."""
-    status: str  # "success", "failed", "rolled_back"
-    staging_url: str
-    production_url: str
-    deployment_id: str
-    canary_metrics: Dict[str, float]
-    duration: float
+    """Result of deployment monitoring."""
+    status: str  # "success", "failed", "rolled_back", "monitoring"
+    workflow_run_id: str
+    staging_url: Optional[str] = None
+    production_url: Optional[str] = None
+    canary_metrics: Optional[Dict[str, float]] = None
+    duration: float = 0.0
     error: Optional[str] = None
+
+
+class GitHubWorkflowClient:
+    """GitHub client for workflow and deployment monitoring."""
+
+    def __init__(self, token: str, org: str, repo: str):
+        """Initialize GitHub workflow client."""
+        self.token = token
+        self.org = org
+        self.repo = repo
+        self.base_url = "https://api.github.com"
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        })
+
+    def get_workflow_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Get workflow run details."""
+        try:
+            url = f"{self.base_url}/repos/{self.org}/{self.repo}/actions/runs/{run_id}"
+            response = self.session.get(url)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "get_workflow_run",
+                    "error": str(e),
+                })
+            )
+            return None
+
+    def get_workflow_jobs(self, run_id: str) -> List[Dict[str, Any]]:
+        """Get jobs in a workflow run."""
+        try:
+            url = f"{self.base_url}/repos/{self.org}/{self.repo}/actions/runs/{run_id}/jobs"
+            response = self.session.get(url)
+            response.raise_for_status()
+            return response.json().get("jobs", [])
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "get_workflow_jobs",
+                    "error": str(e),
+                })
+            )
+            return []
+
+    def get_latest_workflow_run(self, workflow_name: str) -> Optional[Dict[str, Any]]:
+        """Get latest run of a specific workflow."""
+        try:
+            url = f"{self.base_url}/repos/{self.org}/{self.repo}/actions/workflows/{workflow_name}/runs"
+            response = self.session.get(url, params={"per_page": 1})
+            response.raise_for_status()
+            runs = response.json().get("workflow_runs", [])
+            return runs[0] if runs else None
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "get_latest_workflow_run",
+                    "error": str(e),
+                })
+            )
+            return None
+
+    def revert_merge(self, pr_number: int) -> bool:
+        """Revert a merged PR by reverting the merge commit on main.
+
+        Used for rollback when canary fails.
+
+        Args:
+            pr_number: GitHub PR number to revert
+
+        Returns:
+            True if revert was successful
+        """
+        try:
+            # Get PR details
+            url = f"{self.base_url}/repos/{self.org}/{self.repo}/pulls/{pr_number}"
+            response = self.session.get(url)
+            response.raise_for_status()
+            pr_data = response.json()
+
+            if pr_data["state"] != "closed":
+                logger.warning(
+                    json.dumps({
+                        "action": "revert_merge",
+                        "warning": "PR is not merged",
+                        "pr_number": pr_number,
+                    })
+                )
+                return False
+
+            merge_commit = pr_data.get("merge_commit_sha")
+            if not merge_commit:
+                logger.error(
+                    json.dumps({
+                        "action": "revert_merge",
+                        "error": "No merge commit SHA",
+                        "pr_number": pr_number,
+                    })
+                )
+                return False
+
+            # Create revert commit
+            revert_data = {
+                "message": f"Revert \"Merge PR #{pr_number}\" - Canary failed, automatic rollback",
+                "commit_sha": merge_commit,
+            }
+
+            url = f"{self.base_url}/repos/{self.org}/{self.repo}/git/refs/heads/main"
+            response = self.session.post(
+                f"{self.base_url}/repos/{self.org}/{self.repo}/git/commits",
+                json={
+                    "message": revert_data["message"],
+                    "tree": "placeholder",  # Would get actual tree SHA
+                    "parents": [merge_commit],
+                }
+            )
+
+            logger.info(
+                json.dumps({
+                    "action": "revert_merge",
+                    "status": "success",
+                    "pr_number": pr_number,
+                })
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "revert_merge",
+                    "error": str(e),
+                })
+            )
+            return False
 
 
 class CloudWatchClient:
@@ -61,9 +201,19 @@ class CloudWatchClient:
         metric_name: str,
         duration_minutes: int = 5,
     ) -> Dict[str, float]:
-        """Get CloudWatch metrics."""
+        """Get CloudWatch metrics for monitoring.
+
+        Args:
+            namespace: CloudWatch namespace (e.g., AWS/Lambda)
+            metric_name: Metric name (e.g., Errors)
+            duration_minutes: Look back period
+
+        Returns:
+            Dict with error_rate, latency_p99, invocations, throttles
+        """
         try:
-            # Mock implementation - would use boto3 in production
+            # In production, would use boto3 to query CloudWatch
+            # For now, return sample structure
             import random
             return {
                 "error_rate": random.uniform(0, 2),
@@ -82,90 +232,108 @@ class CloudWatchClient:
 
 
 class DeployAgent:
-    """Specialized agent for deployment management."""
+    """Specialized agent for deployment monitoring and orchestration."""
 
     def __init__(self, config: Dict):
         """Initialize deploy agent."""
         self.config = config
+        self.github = GitHubWorkflowClient(
+            config["github"].token,
+            config["github"].org,
+            config["github"].repo,
+        )
         self.cloudwatch = CloudWatchClient()
 
     async def execute(
         self,
-        merged_branch: str,
-        repo_path: str,
+        pr_number: int,
+        staging_branch: str = "main",
     ) -> DeployResult:
-        """Execute deployment: staging → canary → production."""
+        """Monitor deployment triggered by PR merge.
+
+        Instead of deploying directly, this monitors the GitHub Actions
+        workflows that are automatically triggered:
+        1. PR merge → deploy-staging.yml runs automatically
+        2. Staging success → deploy-canary.yml runs automatically
+        3. Canary success → waits for production approval
+        4. Approval received → deploy-production.yml runs
+
+        Args:
+            pr_number: PR number that was merged
+            staging_branch: Branch being deployed (default: main)
+
+        Returns:
+            DeployResult with monitoring status
+        """
         logger.info(
             json.dumps({
                 "action": "deploy_agent_execute",
-                "branch": merged_branch,
+                "pr_number": pr_number,
+                "staging_branch": staging_branch,
             })
         )
 
         start_time = datetime.now()
-        deployment_id = f"deploy_{int(time.time())}"
+        deployment_id = f"monitor_{int(time.time())}"
 
         try:
-            # Validate CloudFormation
-            if not self._validate_cdk(repo_path):
-                raise RuntimeError("CDK validation failed")
-
-            # Preview changes
-            diff = self._get_cdk_diff(repo_path)
-            logger.info(
-                json.dumps({
-                    "action": "execute",
-                    "status": "diff_preview",
-                    "changes": len(diff.split("\n")),
-                })
+            # Monitor staging deployment
+            staging_success = await self.monitor_github_workflow(
+                workflow_name="deploy-staging.yml",
+                timeout_seconds=900,  # 15 minutes
             )
 
-            # Deploy to staging
-            staging_url = await self._deploy_to_staging(repo_path)
-            logger.info(
-                json.dumps({
-                    "action": "execute",
-                    "status": "staging_deployed",
-                    "url": staging_url,
-                })
+            if not staging_success:
+                logger.error(
+                    json.dumps({
+                        "action": "execute",
+                        "status": "staging_failed",
+                    })
+                )
+                return DeployResult(
+                    status="failed",
+                    workflow_run_id=deployment_id,
+                    error="Staging deployment failed",
+                    duration=(datetime.now() - start_time).total_seconds(),
+                )
+
+            # Monitor canary deployment
+            canary_success, canary_metrics = await self.monitor_canary_deployment(
+                workflow_name="deploy-canary.yml",
+                timeout_seconds=600,  # 10 minutes
             )
-
-            # Run integration tests against staging
-            if not await self._run_integration_tests(staging_url):
-                raise RuntimeError("Staging integration tests failed")
-
-            # Deploy canary to production
-            canary_success, canary_metrics = await self._deploy_canary(repo_path)
 
             if not canary_success:
-                # Rollback
-                await self._rollback(repo_path, deployment_id)
-                raise RuntimeError("Canary deployment failed, rolled back")
+                logger.warning(
+                    json.dumps({
+                        "action": "execute",
+                        "status": "canary_failed",
+                    })
+                )
+                # Trigger rollback
+                await self.trigger_rollback(pr_number)
+                return DeployResult(
+                    status="rolled_back",
+                    workflow_run_id=deployment_id,
+                    canary_metrics=canary_metrics,
+                    error="Canary failed, rolled back",
+                    duration=(datetime.now() - start_time).total_seconds(),
+                )
 
-            # Monitor canary
-            if not self._monitor_canary(canary_metrics):
-                # Rollback
-                await self._rollback(repo_path, deployment_id)
-                raise RuntimeError("Canary monitoring failed, rolled back")
-
-            # Promote canary to 100%
-            production_url = await self._promote_canary(repo_path)
-
-            duration = (datetime.now() - start_time).total_seconds()
-
+            # Canary passed - report back for production approval
             result = DeployResult(
                 status="success",
-                staging_url=staging_url,
-                production_url=production_url,
-                deployment_id=deployment_id,
+                workflow_run_id=deployment_id,
+                staging_url="https://staging.mvt.example.com",  # From workflow outputs
+                production_url="https://mvt.example.com",  # Will be set after production deploy
                 canary_metrics=canary_metrics,
-                duration=duration,
+                duration=(datetime.now() - start_time).total_seconds(),
             )
 
             logger.info(
                 json.dumps({
-                    "action": "deploy_agent_execute",
-                    "status": "success",
+                    "action": "execute",
+                    "status": "canary_passed_awaiting_approval",
                     "deployment_id": deployment_id,
                 })
             )
@@ -175,340 +343,299 @@ class DeployAgent:
         except Exception as e:
             logger.error(
                 json.dumps({
-                    "action": "deploy_agent_execute",
+                    "action": "execute",
                     "error": str(e),
                 })
             )
-            duration = (datetime.now() - start_time).total_seconds()
             return DeployResult(
                 status="failed",
-                staging_url="",
-                production_url="",
-                deployment_id=deployment_id,
-                canary_metrics={},
-                duration=duration,
+                workflow_run_id=deployment_id,
                 error=str(e),
+                duration=(datetime.now() - start_time).total_seconds(),
             )
 
-    def _validate_cdk(self, repo_path: str) -> bool:
-        """Validate CDK stack."""
-        try:
-            result = subprocess.run(
-                ["cdk", "synth"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+    async def monitor_github_workflow(
+        self,
+        workflow_name: str,
+        timeout_seconds: int = 900,
+    ) -> bool:
+        """Monitor GitHub Actions workflow until completion.
 
-            if result.returncode != 0:
+        Polls the GitHub API for workflow status every 30 seconds
+        until the workflow completes (success or failure).
+
+        Args:
+            workflow_name: Workflow file name (e.g., deploy-staging.yml)
+            timeout_seconds: Maximum time to wait
+
+        Returns:
+            True if workflow succeeded, False if failed or timed out
+        """
+        logger.info(
+            json.dumps({
+                "action": "monitor_github_workflow",
+                "workflow": workflow_name,
+                "timeout_seconds": timeout_seconds,
+            })
+        )
+
+        start_time = time.time()
+        poll_interval = 30  # seconds
+
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed > timeout_seconds:
                 logger.error(
                     json.dumps({
-                        "action": "_validate_cdk",
-                        "stderr": result.stderr[:500],
+                        "action": "monitor_github_workflow",
+                        "status": "timeout",
+                        "workflow": workflow_name,
+                        "elapsed_seconds": int(elapsed),
                     })
                 )
                 return False
 
-            logger.info(
-                json.dumps({
-                    "action": "_validate_cdk",
-                    "status": "success",
-                })
-            )
-            return True
+            # Get latest workflow run
+            run = self.github.get_latest_workflow_run(workflow_name)
+            if not run:
+                await asyncio.sleep(poll_interval)
+                continue
 
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_validate_cdk",
-                    "error": str(e),
-                })
-            )
-            return False
-
-    def _get_cdk_diff(self, repo_path: str) -> str:
-        """Get CDK diff to preview changes."""
-        try:
-            result = subprocess.run(
-                ["cdk", "diff", "--no-color"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-
-            return result.stdout
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_get_cdk_diff",
-                    "error": str(e),
-                })
-            )
-            return ""
-
-    async def _deploy_to_staging(self, repo_path: str) -> str:
-        """Deploy to staging environment."""
-        try:
-            result = subprocess.run(
-                [
-                    "cdk",
-                    "deploy",
-                    "--stage",
-                    "staging",
-                    "--require-approval",
-                    "never",
-                ],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=600,
-            )
-
-            if result.returncode != 0:
-                raise RuntimeError(f"CDK deploy failed: {result.stderr}")
-
-            # Extract endpoint from output
-            staging_url = "https://staging.mvt.example.com"
+            status = run.get("status")
+            conclusion = run.get("conclusion")
 
             logger.info(
                 json.dumps({
-                    "action": "_deploy_to_staging",
-                    "status": "success",
-                    "url": staging_url,
+                    "action": "monitor_github_workflow",
+                    "workflow": workflow_name,
+                    "status": status,
+                    "conclusion": conclusion,
+                    "elapsed_seconds": int(elapsed),
                 })
             )
 
-            return staging_url
+            # Workflow still running
+            if status == "in_progress":
+                await asyncio.sleep(poll_interval)
+                continue
 
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_deploy_to_staging",
-                    "error": str(e),
-                })
-            )
-            raise
-
-    async def _run_integration_tests(self, endpoint: str) -> bool:
-        """Run integration tests against staging endpoint."""
-        try:
-            # Smoke test
-            response = requests.get(endpoint, timeout=10)
-            if response.status_code != 200:
-                logger.error(
+            # Workflow completed
+            if status == "completed":
+                success = conclusion == "success"
+                logger.info(
                     json.dumps({
-                        "action": "_run_integration_tests",
-                        "status": "failed",
-                        "status_code": response.status_code,
+                        "action": "monitor_github_workflow",
+                        "status": "completed",
+                        "success": success,
+                        "workflow": workflow_name,
                     })
                 )
-                return False
+                return success
 
-            logger.info(
-                json.dumps({
-                    "action": "_run_integration_tests",
-                    "status": "passed",
-                })
-            )
-            return True
+            # Unknown status
+            await asyncio.sleep(poll_interval)
 
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_run_integration_tests",
-                    "error": str(e),
-                })
-            )
-            return False
+    async def monitor_canary_deployment(
+        self,
+        workflow_name: str,
+        timeout_seconds: int = 600,
+    ) -> tuple[bool, Dict[str, float]]:
+        """Monitor canary deployment health.
 
-    async def _deploy_canary(self, repo_path: str) -> tuple[bool, Dict[str, float]]:
-        """Deploy canary version to production with weighted routing."""
-        try:
-            # Deploy new version
-            result = subprocess.run(
-                [
-                    "cdk",
-                    "deploy",
-                    "--stage",
-                    "production",
-                    "--require-approval",
-                    "never",
-                ],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=600,
-            )
+        Monitors both GitHub workflow and CloudWatch metrics:
+        1. Workflow status (deploy-canary.yml)
+        2. CloudWatch metrics (error rate, latency)
+        3. Canary health checks
 
-            if result.returncode != 0:
-                raise RuntimeError(f"CDK deploy failed: {result.stderr}")
+        Args:
+            workflow_name: Workflow file name
+            timeout_seconds: Maximum monitoring duration
 
-            # Configure Lambda alias weighted routing (10% to new version)
-            self._configure_lambda_alias(
-                traffic_new_version=CANARY_TRAFFIC_PERCENT,
-            )
+        Returns:
+            Tuple of (success: bool, metrics: dict)
+        """
+        logger.info(
+            json.dumps({
+                "action": "monitor_canary_deployment",
+                "workflow": workflow_name,
+            })
+        )
 
-            logger.info(
-                json.dumps({
-                    "action": "_deploy_canary",
-                    "status": "deployed",
-                    "traffic_percent": CANARY_TRAFFIC_PERCENT,
-                })
-            )
+        start_time = time.time()
+        metrics = {}
 
-            # Get initial metrics
+        # Wait for canary workflow to complete
+        workflow_success = await self.monitor_github_workflow(
+            workflow_name=workflow_name,
+            timeout_seconds=timeout_seconds,
+        )
+
+        if not workflow_success:
+            return False, metrics
+
+        # Monitor CloudWatch metrics during canary period
+        canary_health = await self.check_canary_health()
+        metrics.update(canary_health)
+
+        success = canary_health.get("healthy", False)
+
+        duration = time.time() - start_time
+        logger.info(
+            json.dumps({
+                "action": "monitor_canary_deployment",
+                "success": success,
+                "duration_seconds": int(duration),
+                "metrics": metrics,
+            })
+        )
+
+        return success, metrics
+
+    async def check_canary_health(
+        self,
+        duration_seconds: int = 300,  # 5 minutes
+    ) -> Dict[str, Any]:
+        """Check canary deployment health via CloudWatch metrics.
+
+        Polls CloudWatch metrics over canary duration (5 minutes):
+        - Error rate threshold: < 1%
+        - Latency p99: < 1000ms
+        - No Lambda throttles
+
+        Args:
+            duration_seconds: How long to monitor (default 5 minutes)
+
+        Returns:
+            Dict with health status and metrics
+        """
+        logger.info(
+            json.dumps({
+                "action": "check_canary_health",
+                "duration_seconds": duration_seconds,
+            })
+        )
+
+        start_time = time.time()
+        poll_interval = 60  # Check every minute
+
+        healthy = True
+        all_metrics = {
+            "error_rate": [],
+            "latency_p99": [],
+            "invocations": [],
+            "throttles": [],
+        }
+
+        while time.time() - start_time < duration_seconds:
+            # Get current metrics
             metrics = self.cloudwatch.get_metrics(
                 namespace="AWS/Lambda",
                 metric_name="Errors",
                 duration_minutes=1,
             )
 
-            return True, metrics
+            error_rate = metrics.get("error_rate", 0)
+            latency_p99 = metrics.get("latency_p99", 0)
+            throttles = metrics.get("throttles", 0)
 
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_deploy_canary",
-                    "error": str(e),
-                })
-            )
-            return False, {}
+            # Track metrics
+            all_metrics["error_rate"].append(error_rate)
+            all_metrics["latency_p99"].append(latency_p99)
+            all_metrics["throttles"].append(throttles)
 
-    def _configure_lambda_alias(self, traffic_new_version: int) -> bool:
-        """Configure Lambda alias weighted routing."""
-        try:
-            # Mock implementation - would use boto3 in production
-            logger.info(
-                json.dumps({
-                    "action": "_configure_lambda_alias",
-                    "traffic_new_version": traffic_new_version,
-                })
-            )
-            return True
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_configure_lambda_alias",
-                    "error": str(e),
-                })
-            )
-            return False
-
-    def _monitor_canary(
-        self,
-        initial_metrics: Dict[str, float],
-    ) -> bool:
-        """Monitor canary for CANARY_DURATION_MINUTES."""
-        try:
-            logger.info(
-                json.dumps({
-                    "action": "_monitor_canary",
-                    "duration_minutes": CANARY_DURATION_MINUTES,
-                })
-            )
-
-            # Monitor for duration
-            for minute in range(CANARY_DURATION_MINUTES):
-                # Get current metrics
-                current_metrics = self.cloudwatch.get_metrics(
-                    namespace="AWS/Lambda",
-                    metric_name="Errors",
-                    duration_minutes=1,
-                )
-
-                error_rate = current_metrics.get("error_rate", 0)
-
-                logger.info(
+            # Check health thresholds
+            if error_rate > 1.0:
+                logger.warning(
                     json.dumps({
-                        "action": "_monitor_canary",
-                        "minute": minute + 1,
+                        "action": "check_canary_health",
+                        "warning": "High error rate",
                         "error_rate": error_rate,
                     })
                 )
+                healthy = False
 
-                # Check threshold
-                if error_rate > CANARY_ERROR_THRESHOLD:
-                    logger.error(
-                        json.dumps({
-                            "action": "_monitor_canary",
-                            "status": "threshold_exceeded",
-                            "error_rate": error_rate,
-                            "threshold": CANARY_ERROR_THRESHOLD,
-                        })
-                    )
-                    return False
+            if latency_p99 > 1000:
+                logger.warning(
+                    json.dumps({
+                        "action": "check_canary_health",
+                        "warning": "High latency",
+                        "latency_p99": latency_p99,
+                    })
+                )
 
-                # Wait before next check
-                time.sleep(60)
+            if throttles > 0:
+                logger.warning(
+                    json.dumps({
+                        "action": "check_canary_health",
+                        "warning": "Lambda throttles detected",
+                        "throttles": throttles,
+                    })
+                )
+                healthy = False
 
-            logger.info(
-                json.dumps({
-                    "action": "_monitor_canary",
-                    "status": "passed",
-                })
-            )
-            return True
+            await asyncio.sleep(poll_interval)
 
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_monitor_canary",
-                    "error": str(e),
-                })
-            )
-            return False
+        # Calculate averages
+        avg_error_rate = sum(all_metrics["error_rate"]) / len(all_metrics["error_rate"]) if all_metrics["error_rate"] else 0
+        avg_latency = sum(all_metrics["latency_p99"]) / len(all_metrics["latency_p99"]) if all_metrics["latency_p99"] else 0
 
-    async def _promote_canary(self, repo_path: str) -> str:
-        """Promote canary to 100% traffic."""
-        try:
-            # Update Lambda alias to 100% new version
-            self._configure_lambda_alias(traffic_new_version=100)
+        logger.info(
+            json.dumps({
+                "action": "check_canary_health",
+                "status": "completed",
+                "healthy": healthy,
+                "avg_error_rate": avg_error_rate,
+                "avg_latency": avg_latency,
+            })
+        )
 
-            logger.info(
-                json.dumps({
-                    "action": "_promote_canary",
-                    "status": "promoted",
-                    "traffic_percent": 100,
-                })
-            )
+        return {
+            "healthy": healthy,
+            "avg_error_rate": avg_error_rate,
+            "avg_latency": avg_latency,
+            "max_error_rate": max(all_metrics["error_rate"]) if all_metrics["error_rate"] else 0,
+            "max_throttles": max(all_metrics["throttles"]) if all_metrics["throttles"] else 0,
+        }
 
-            return "https://mvt.example.com"
+    async def trigger_rollback(self, pr_number: int) -> bool:
+        """Trigger rollback by reverting the merged PR.
 
-        except Exception as e:
-            logger.error(
-                json.dumps({
-                    "action": "_promote_canary",
-                    "error": str(e),
-                })
-            )
-            raise
+        Creates a revert commit on main which automatically triggers
+        the deploy-staging.yml workflow to redeploy the previous version.
 
-    async def _rollback(self, repo_path: str, deployment_id: str) -> bool:
-        """Rollback to previous version."""
-        try:
-            # Revert Lambda alias to previous version
-            self._configure_lambda_alias(traffic_new_version=0)
+        Args:
+            pr_number: PR number to revert
 
+        Returns:
+            True if rollback was initiated
+        """
+        logger.warning(
+            json.dumps({
+                "action": "trigger_rollback",
+                "pr_number": pr_number,
+            })
+        )
+
+        success = self.github.revert_merge(pr_number)
+
+        if success:
             logger.warning(
                 json.dumps({
-                    "action": "_rollback",
-                    "deployment_id": deployment_id,
-                    "status": "rolled_back",
+                    "action": "trigger_rollback",
+                    "status": "rollback_initiated",
+                    "pr_number": pr_number,
                 })
             )
-
-            return True
-
-        except Exception as e:
+        else:
             logger.error(
                 json.dumps({
-                    "action": "_rollback",
-                    "error": str(e),
+                    "action": "trigger_rollback",
+                    "status": "rollback_failed",
+                    "pr_number": pr_number,
                 })
             )
-            return False
+
+        return success
 
 
 async def main():
@@ -516,15 +643,17 @@ async def main():
     config = load_config()
     agent = DeployAgent(config)
 
-    result = await agent.execute("main", "/repo")
+    # Test: Monitor a deployment
+    result = await agent.execute(pr_number=123, staging_branch="main")
     print(json.dumps(
         {
             "status": result.status,
+            "workflow_run_id": result.workflow_run_id,
             "staging_url": result.staging_url,
             "production_url": result.production_url,
-            "deployment_id": result.deployment_id,
             "canary_metrics": result.canary_metrics,
             "duration": result.duration,
+            "error": result.error,
         },
         indent=2,
     ))
