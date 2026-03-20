@@ -63,22 +63,21 @@ def get_current_scores() -> dict:
             if country_scores:
                 scores['contagion'] = max(float(v) for v in country_scores.values())
 
-        # Get VIX level (latest sentiment_seismic data)
-        # This would typically come from the most recent yfinance data
-        # For now, we'll query the signals table
+        # Get VIX level (latest yfinance data from signals table)
         from boto3.dynamodb.conditions import Key
         signals_table = dynamodb.Table(os.environ.get('SIGNALS_TABLE'))
         response = signals_table.query(
-            KeyConditionExpression='dashboard = :dashboard AND begins_with(sort_key, :vix)',
+            KeyConditionExpression='dashboard = :dashboard AND begins_with(signalId_timestamp, :vix)',
             ExpressionAttributeValues={
                 ':dashboard': 'sentiment_seismic',
-                ':vix': 'yfinance#^VIX'
+                ':vix': 'yahoo#VIX'
             },
             ScanIndexForward=False,
             Limit=1
         )
         if response.get('Items'):
-            scores['vix'] = float(response['Items'][0].get('current_price', 0))
+            raw_data = response['Items'][0].get('raw_data', {})
+            scores['vix'] = float(raw_data.get('price', response['Items'][0].get('value', 0)))
 
         return scores
 

@@ -19,18 +19,24 @@ EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME')
 WEIGHTS = {
     'vix': 0.30,
     'finnhub_bearish': 0.25,
-    'gdelt_conflicts': 0.25,
-    'sanctions': 0.20
+    'gdelt_crisis': 0.25,
+    'gdelt_severity': 0.20
 }
 
 
 def get_latest_sentiment_signals() -> dict:
-    """Fetch latest sentiment signals."""
+    """Fetch latest sentiment signals from signals table.
+
+    Pollers write to dashboard='sentiment_seismic' with signalId_timestamp as sort key:
+    - yfinance: signalId_timestamp='yahoo#VIX#<ts>', value=<normalized>, raw_data.price=<actual VIX price>
+    - finnhub:  signalId_timestamp='finnhub#<ticker>#<ts>', value=<sentiment_score 0-100>, raw_data.sentiment_score
+    - gdelt:    signalId_timestamp='gdelt#<date>#<idx>', value=<sentiment_score>, raw_data.sentiment_score
+    """
     table = dynamodb.Table(SIGNALS_TABLE)
     signals = {
-        'vix': None,
-        'finnhub_sentiment': None,
-        'gdelt_events': []
+        'vix_price': None,
+        'finnhub_articles': [],
+        'gdelt_articles': []
     }
 
     try:
@@ -42,18 +48,36 @@ def get_latest_sentiment_signals() -> dict:
         )
 
         for item in response.get('Items', []):
-            sort_key = item.get('sort_key', '')
+            sk = item.get('signalId_timestamp', '')
 
-            if '^VIX' in sort_key and signals['vix'] is None:
-                signals['vix'] = float(item.get('current_price', 0))
+            if 'yahoo#VIX' in sk and signals['vix_price'] is None:
+                # Get actual VIX price from raw_data, fall back to value
+                raw_data = item.get('raw_data', {})
+                price = raw_data.get('price')
+                if price is not None:
+                    signals['vix_price'] = float(price)
+                else:
+                    signals['vix_price'] = float(item.get('value', 0))
+                logger.info(f"Found VIX price: {signals['vix_price']}")
 
-            elif 'finnhub' in sort_key and signals['finnhub_sentiment'] is None:
-                sentiment_data = item.get('aggregate_sentiment', {})
-                signals['finnhub_sentiment'] = sentiment_data
+            elif sk.startswith('finnhub#'):
+                score = float(item.get('value', 50))
+                signals['finnhub_articles'].append({
+                    'signalId': sk,
+                    'sentiment_score': score
+                })
 
-            elif 'gdelt' in sort_key:
-                signals['gdelt_events'].append(item)
+            elif sk.startswith('gdelt#'):
+                raw_data = item.get('raw_data', {})
+                score = float(raw_data.get('sentiment_score', item.get('value', 50)))
+                signals['gdelt_articles'].append({
+                    'signalId': sk,
+                    'sentiment_score': score
+                })
 
+        logger.info(f"Signals found: VIX={'yes' if signals['vix_price'] else 'no'}, "
+                    f"finnhub_articles={len(signals['finnhub_articles'])}, "
+                    f"gdelt_articles={len(signals['gdelt_articles'])}")
         return signals
 
     except Exception as e:
@@ -70,55 +94,61 @@ def normalize_value(value: float, min_val: float, max_val: float) -> float:
     return max(0, min(100, normalized))
 
 
-def compute_vix_contribution(vix: float) -> float:
+def compute_vix_contribution(vix_price: float) -> float:
     """Compute VIX contribution to trigger probability (15-45 range → 0-100)."""
-    if vix is None:
+    if vix_price is None:
         return 0.0
 
     # Normalize VIX from 15-45 range to 0-100
-    vix_normalized = normalize_value(vix, 15, 45)
+    vix_normalized = normalize_value(vix_price, 15, 45)
     return vix_normalized
 
 
-def compute_bearish_contribution(sentiment: dict) -> float:
-    """Compute Finnhub bearish percentage contribution."""
-    if not sentiment:
+def compute_bearish_contribution(articles: list) -> float:
+    """Compute bearish percentage from Finnhub article sentiments.
+
+    Articles have sentiment_score 0-100 where:
+    - < 40 = bearish
+    - 40-60 = neutral
+    - > 60 = bullish
+    """
+    if not articles:
         return 0.0
 
-    bearish_pct = sentiment.get('bearish_pct', 0)
-    return float(bearish_pct)
+    bearish_count = sum(1 for a in articles if a['sentiment_score'] < 40)
+    bearish_pct = (bearish_count / len(articles)) * 100
+    logger.info(f"Finnhub bearish: {bearish_count}/{len(articles)} = {bearish_pct:.1f}%")
+    return bearish_pct
 
 
-def count_gdelt_conflicts(events: list) -> int:
-    """Count GDELT conflict/sanctions events."""
-    conflict_codes = ['14', '17', '18', '19', '20']
-    conflict_count = 0
+def compute_gdelt_crisis_score(articles: list) -> float:
+    """Compute crisis score from GDELT articles.
 
-    for event in events:
-        event_code = event.get('event_code', '')
-        if event_code in conflict_codes:
-            conflict_count += 1
+    Articles have sentiment_score where higher = more crisis-related.
+    Score > 50 indicates significant crisis content.
+    """
+    if not articles:
+        return 0.0
 
-    return conflict_count
+    crisis_articles = sum(1 for a in articles if a['sentiment_score'] > 50)
+    # Normalize: 0-10 crisis articles → 0-100
+    crisis_score = normalize_value(float(crisis_articles), 0, 10)
+    logger.info(f"GDELT crisis articles: {crisis_articles}/{len(articles)}, score: {crisis_score:.1f}")
+    return crisis_score
 
 
-def count_sanctions_activity(events: list) -> int:
-    """Count new sanctions entities."""
-    sanctions_count = 0
-    seen_entities = set()
+def compute_gdelt_severity(articles: list) -> float:
+    """Compute average severity from GDELT articles.
 
-    for event in events:
-        event_code = event.get('event_code', '')
-        if event_code in ['19', '20']:  # Sanctions/Threats
-            actor1 = event.get('actor1_country', '')
-            actor2 = event.get('actor2_country', '')
-            key = f"{actor1}|{actor2}"
+    Higher average sentiment_score = more severe crisis sentiment.
+    """
+    if not articles:
+        return 0.0
 
-            if key not in seen_entities:
-                sanctions_count += 1
-                seen_entities.add(key)
-
-    return sanctions_count
+    avg_score = sum(a['sentiment_score'] for a in articles) / len(articles)
+    # Scores are already 0-100, use directly
+    logger.info(f"GDELT avg severity: {avg_score:.1f}")
+    return avg_score
 
 
 def compute_trigger_probability(signals: dict) -> float:
@@ -126,26 +156,24 @@ def compute_trigger_probability(signals: dict) -> float:
     probability = 0.0
 
     # VIX contribution (15-45 range → 0-100)
-    vix_score = compute_vix_contribution(signals['vix'])
+    vix_score = compute_vix_contribution(signals['vix_price'])
     probability += vix_score * WEIGHTS['vix']
-    logger.info(f"VIX contribution: {vix_score * WEIGHTS['vix']:.2f}")
+    logger.info(f"VIX contribution: {vix_score:.2f} * {WEIGHTS['vix']} = {vix_score * WEIGHTS['vix']:.2f}")
 
     # Finnhub bearish contribution
-    finnhub_score = compute_bearish_contribution(signals['finnhub_sentiment'])
+    finnhub_score = compute_bearish_contribution(signals['finnhub_articles'])
     probability += finnhub_score * WEIGHTS['finnhub_bearish']
-    logger.info(f"Finnhub bearish contribution: {finnhub_score * WEIGHTS['finnhub_bearish']:.2f}")
+    logger.info(f"Finnhub bearish contribution: {finnhub_score:.2f} * {WEIGHTS['finnhub_bearish']} = {finnhub_score * WEIGHTS['finnhub_bearish']:.2f}")
 
-    # GDELT conflict count (0-200 events → 0-100)
-    conflict_count = count_gdelt_conflicts(signals['gdelt_events'])
-    conflict_score = normalize_value(float(conflict_count), 0, 200)
-    probability += conflict_score * WEIGHTS['gdelt_conflicts']
-    logger.info(f"GDELT conflicts contribution: {conflict_score * WEIGHTS['gdelt_conflicts']:.2f}")
+    # GDELT crisis article count (0-10 articles → 0-100)
+    gdelt_crisis = compute_gdelt_crisis_score(signals['gdelt_articles'])
+    probability += gdelt_crisis * WEIGHTS['gdelt_crisis']
+    logger.info(f"GDELT crisis contribution: {gdelt_crisis:.2f} * {WEIGHTS['gdelt_crisis']} = {gdelt_crisis * WEIGHTS['gdelt_crisis']:.2f}")
 
-    # Sanctions activity (count unique pairs)
-    sanctions_count = count_sanctions_activity(signals['gdelt_events'])
-    sanctions_score = normalize_value(float(sanctions_count), 0, 100)
-    probability += sanctions_score * WEIGHTS['sanctions']
-    logger.info(f"Sanctions activity contribution: {sanctions_score * WEIGHTS['sanctions']:.2f}")
+    # GDELT severity (average sentiment score)
+    gdelt_severity = compute_gdelt_severity(signals['gdelt_articles'])
+    probability += gdelt_severity * WEIGHTS['gdelt_severity']
+    logger.info(f"GDELT severity contribution: {gdelt_severity:.2f} * {WEIGHTS['gdelt_severity']} = {gdelt_severity * WEIGHTS['gdelt_severity']:.2f}")
 
     return min(100, max(0, probability))
 
