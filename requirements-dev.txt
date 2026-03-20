@@ -1,0 +1,11 @@
+# MVT Trilogy — Development & Test Dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.23.0
+flake8>=6.1.0
+mypy>=1.8.0
+bandit>=1.7.0
+detect-secrets>=1.4.0
+requests>=2.31.0
+boto3>=1.34.0
+moto>=5.0.0
