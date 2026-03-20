@@ -206,6 +206,38 @@
             margin-bottom: 1rem;
         }
 
+        /* Loading & Connection States */
+        .connection-banner {
+            display: none;
+            background: rgba(255,68,68,0.15);
+            color: #ff6b6b;
+            text-align: center;
+            padding: 0.5rem;
+            font-size: 0.8rem;
+            border-bottom: 1px solid rgba(255,68,68,0.3);
+        }
+
+        .connection-banner.visible {
+            display: block;
+        }
+
+        .kpi-card.loading .kpi-value {
+            animation: pulse-loading 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-loading {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .section-timestamp {
+            font-size: 0.7rem;
+            color: #555;
+            text-align: right;
+            margin-top: 0.3rem;
+            font-variant-numeric: tabular-nums;
+        }
+
         /* Signal Feed */
         .signal-feed {
             background: #141829;
@@ -605,6 +637,10 @@
             <div class="timestamp">Updated: <span id="lastUpdate">--:--:--</span></div>
         </div>
     </header>
+
+    <div class="connection-banner" id="connectionBanner">
+        WebSocket disconnected. Attempting to reconnect... Data may be stale.
+    </div>
 
     <div class="tabs">
         <button class="tab-btn active" data-tab="overview">Overview</button>
@@ -1031,12 +1067,15 @@
         function updateConnectionStatus(connected) {
             const indicator = document.getElementById('statusIndicator');
             const statusText = document.getElementById('statusText');
+            const banner = document.getElementById('connectionBanner');
             if (connected) {
                 indicator.classList.add('connected');
                 statusText.textContent = 'Connected';
+                banner.classList.remove('visible');
             } else {
                 indicator.classList.remove('connected');
                 statusText.textContent = 'Disconnected';
+                banner.classList.add('visible');
             }
         }
 

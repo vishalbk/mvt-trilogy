@@ -1,442 +1,206 @@
-# Macro Vulnerability Trilogy (MVT) - Sprint Automation System
+# MVT Observatory — Macro Vulnerability Trilogy
 
-Production-grade sprint automation platform for the Macro Vulnerability Trilogy project. Orchestrates story execution across specialized subagents with JIRA integration, GitHub workflows, and Telegram command interface.
+Multi-cloud FinTech platform monitoring global macro-economic vulnerability through 4 real-time KPI dashboards, AI-powered SDLC agents, and cross-cloud analytics.
+
+**Live Dashboard**: https://d2p9otbgwjwwuv.cloudfront.net
 
 ## Architecture
 
 ```
-Master Orchestrator (agents/orchestrator.py)
-├── Code Agent (agents/subagents/code_agent.py)
-│   └── Generates implementation code, creates PRs, validates syntax
-├── Test Agent (agents/subagents/test_agent.py)
-│   └── Runs tests, performs security scans, generates reports
-├── Deploy Agent (agents/subagents/deploy_agent.py)
-│   └── CDK deployment, staging validation, canary deployment, rollback
-├── Docs Agent (agents/subagents/docs_agent.py)
-│   └── Generates Confluence pages, release notes, API documentation
-└── Telegram Bot (telegram-bot/handler.py)
-    └── Command interface for sprint management and approval gates
+┌─────────────────────────────── AWS (us-east-1) ───────────────────────────────┐
+│                                                                                │
+│  Ingestion (6 Lambdas)          Processing (5 Lambdas)         Frontend        │
+│  ┌──────────────────┐           ┌────────────────────┐    ┌──────────────┐    │
+│  │ finnhub-connector│──┐        │ sentiment-aggregator│    │ S3 + CloudFr │    │
+│  │ fred-poller      │  ├──DDB──►│ inequality-scorer   │──►│ 5-tab dashbd │    │
+│  │ gdelt-querier    │  │signals │ contagion-modeler   │    │ WebSocket RT │    │
+│  │ trends-poller    │  │        │ vulnerability-comp   │    └──────────────┘    │
+│  │ worldbank-poller │  │        │ dashboard-router     │         ▲              │
+│  │ yfinance-streamer│──┘        └────────┬─────────────┘         │              │
+│  └──────────────────┘                    │                       │              │
+│                                   DDB dashboard-state ───► DDB Streams         │
+│                                          │                 ws-broadcast         │
+│  SRE (5 Lambdas)                         │                                     │
+│  ┌──────────────────┐            ┌───────▼──────────┐                          │
+│  │ cost-tracker     │            │ alert-manager     │──► Telegram Bot          │
+│  │ health-check     │            │ history-writer    │                          │
+│  │ cost-anomaly     │            │ history-api       │                          │
+│  │ perf-baseline    │            │ event-relay ──────┼──► GCP Pub/Sub           │
+│  │ capacity-planner │            │ analytics-relay   │                          │
+│  └──────────────────┘            └──────────────────┘                          │
+│                                                                                │
+│  SDLC Agents                     Telegram Bot                                  │
+│  ┌──────────────────┐           ┌──────────────────┐                           │
+│  │ Orchestrator     │           │ /kickoff_sprint   │                           │
+│  │ Code Agent       │◄──────►  │ /sprint_status    │                           │
+│  │ Test Agent       │  Claude  │ /approve_release  │                           │
+│  │ Deploy Agent     │   API    │ /sprint_report    │                           │
+│  │ Docs Agent       │           │ /brainstorm       │                           │
+│  └──────────────────┘           └──────────────────┘                           │
+└────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────── GCP (mvt-observer) ────────────────────────────────────┐
+│  Pub/Sub Topics: signals, alerts, analytics (each with DLQ)                    │
+│  Cloud Functions: signal-processor, analytics-writer, gdelt-extractor          │
+│  BigQuery: mvt_analytics (4 tables + daily_summary view)                       │
+│  Firestore: Real-time state sync                                               │
+│  Firebase Hosting: GCP dashboard mirror                                        │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Components
+## Dashboard Tabs
 
-### Master Orchestrator (`agents/orchestrator.py`)
+| Tab | KPIs | Data Source |
+|-----|------|-------------|
+| Overview | Distress Index, Trigger Probability, Contagion Risk, VIX Level | All pollers → composite |
+| Inequality Pulse | CPI YoY, Fed Rate, 10Y Treasury, M2 Supply, Unemployment | FRED API |
+| Sentiment Seismic | Market Sentiment, VIX, SPY, QQQ, Sector Scores | Finnhub + Yahoo Finance |
+| Sovereign Dominoes | Countries at Risk, Cascade Probability, Risk Rankings | World Bank API |
+| SRE Observatory | Health Score, Daily Cost, Error Rate, P50/P90/P99, Capacity | CloudWatch metrics |
 
-Coordinates entire sprint execution with dependency resolution and parallel execution waves.
-
-**Key Classes:**
-- `SprintOrchestrator` - Main orchestration engine
-- `JiraClient` - JIRA REST API integration
-- `GithubClient` - GitHub REST API integration
-- `TelegramClient` - Telegram Bot API integration
-
-**Core Methods:**
-```python
-# Load and execute sprint
-await orchestrator.load_sprint(sprint_id)
-await orchestrator.run(sprint_id)
-
-# Dependency resolution
-dependencies = orchestrator.resolve_dependencies(stories)
-
-# Execution waves (parallel execution groups)
-waves = orchestrator.create_execution_waves(stories)
-
-# Approval gate
-request_id = await orchestrator.request_approval(stories)
-
-# Production deployment
-await orchestrator.deploy_to_production(stories)
-
-# Reporting
-report_url = await orchestrator.generate_sprint_report(sprint_id)
-```
-
-**Workflow:**
-1. Load sprint stories from JIRA
-2. Resolve story dependencies (topological sort)
-3. Group stories into execution waves (max 3 per wave)
-4. Execute each wave concurrently with appropriate subagent
-5. Request approval for security-critical stories
-6. Deploy to production via GitHub Actions
-7. Generate Confluence sprint report
-
-### Code Agent (`agents/subagents/code_agent.py`)
-
-Generates implementation code from JIRA stories.
-
-**Methods:**
-```python
-result = await agent.execute(story)
-# Returns: CodeGenResult with branch, pr_url, files_changed, validation_errors
-```
-
-**Features:**
-- Analyzes story type (Lambda, React, CDK, API spec, database)
-- Generates production-ready code using Claude
-- Creates feature branch: `feature/MVT-{id}-{slug}`
-- Creates pull request with auto-linked story
-- Validates code (syntax, imports, completeness)
-
-**Supported Code Types:**
-- AWS Lambda handlers (Python)
-- React components (TypeScript)
-- CDK constructs (Python)
-- OpenAPI specifications
-- Database migrations
-- Configuration files
-
-### Test Agent (`agents/subagents/test_agent.py`)
-
-Runs test suites, performs security scanning, tracks coverage.
-
-**Methods:**
-```python
-result = await agent.execute(pr_ref, repo_path)
-# Returns: TestResult with passed, failed, coverage, security_issues
-```
-
-**Features:**
-- Runs pytest (Python) or jest (JavaScript)
-- Security scanning:
-  - Hardcoded secrets detection
-  - SQL/command injection patterns
-  - Claude-powered vulnerability analysis
-- Coverage report generation
-- Posts results to PR
-
-**Security Checks:**
-- Regex patterns for common vulnerabilities
-- AI-powered code analysis via Claude
-- Secret detection (API keys, tokens, passwords)
-- Injection vulnerability patterns
-
-### Deploy Agent (`agents/subagents/deploy_agent.py`)
-
-Handles deployment with canary rollout and automatic rollback.
-
-**Methods:**
-```python
-result = await agent.execute(merged_branch, repo_path)
-# Returns: DeployResult with staging_url, production_url, canary_metrics
-```
-
-**Deployment Process:**
-1. Validate CloudFormation/CDK
-2. Deploy to staging environment
-3. Run integration tests against staging
-4. Deploy canary to production (10% traffic by default)
-5. Monitor canary metrics for 5 minutes
-6. Auto-rollback if error rate exceeds 1%
-7. Promote to 100% if healthy
-
-**Monitoring:**
-- Error rate threshold: 1% (configurable)
-- Latency monitoring (p99)
-- CloudWatch metrics integration
-- Auto-rollback on failure
-
-### Docs Agent (`agents/subagents/docs_agent.py`)
-
-Generates Confluence documentation.
-
-**Methods:**
-```python
-# Sprint report
-result = await agent.generate_sprint_report(sprint_id, stories, results)
-
-# Design documents
-result = await agent.generate_design_doc(story_key, summary, criteria)
-
-# API documentation
-result = await agent.generate_api_documentation(openapi_spec)
-
-# Release notes
-result = await agent.generate_release_notes(version, stories, breaking_changes)
-```
-
-**Features:**
-- Confluence REST API v2 integration
-- Claude-powered content generation
-- Proper wiki markup formatting
-- Story linking
-- Automatic page creation
-
-### Telegram Bot (`telegram-bot/handler.py`)
-
-AWS Lambda webhook handler for Telegram Bot API.
-
-**Commands:**
-```
-/brainstorm [topic]      - Generate ideas, create draft page
-/create-epic [summary]   - Create JIRA epic with stories
-/kickoff-sprint          - Start sprint and run orchestrator
-/sprint-status           - Get current board status
-/approve-release         - Approve production deployment
-/sprint-report           - Generate Confluence report
-/help                    - Show available commands
-```
-
-**Inline Buttons:**
-- ✅ Approve release
-- ❌ Reject release
-- 👀 Review (link to Confluence)
-
-**Features:**
-- Command parsing and routing
-- Natural language fallback (via Claude)
-- Approval gate with callbacks
-- Conversation state in DynamoDB
-- Story ideation with Claude
-- JIRA integration for epic creation
-
-## Configuration
-
-### Environment Variables
+## Quick Start
 
 ```bash
-# Telegram Bot
-export TELEGRAM_BOT_TOKEN="..."
-export TELEGRAM_CHAT_ID="..."
+# Clone
+git clone https://github.com/vishalbk/mvt-trilogy.git
+cd mvt-trilogy
 
-# JIRA
-export JIRA_BASE_URL="https://jira.example.com"
-export JIRA_EMAIL="bot@example.com"
-export JIRA_API_TOKEN="..."
-export JIRA_PROJECT_KEY="MVT"
-export JIRA_BOARD_ID="1"
+# Install Python dependencies
+pip install -r requirements-dev.txt
 
-# Confluence
-export CONFLUENCE_URL="https://confluence.example.com"
-export CONFLUENCE_EMAIL="bot@example.com"
-export CONFLUENCE_TOKEN="..."
+# Run unit tests (139 tests)
+pytest tests/unit/ -v
 
-# GitHub
-export GITHUB_TOKEN="..."
-export GITHUB_ORG="your-org"
-export GITHUB_REPO="your-repo"
+# Run smoke tests (requires network)
+pytest tests/smoke/test_e2e_smoke.py -v
 
-# Claude
-export ANTHROPIC_API_KEY="..."
-export CLAUDE_MODEL="claude-opus-4-6"             # Opus for brainstorming/orchestration
-export CLAUDE_MODEL_REASONING="claude-opus-4-6"    # Opus for complex reasoning
-export CLAUDE_MODEL_CODING="claude-sonnet-4-6"     # Sonnet for code generation
-
-# DynamoDB (for conversation state)
-export CONVERSATION_TABLE="mvt-conversations"
-export AWS_REGION="us-east-1"
+# Deploy frontend
+aws s3 sync frontend/ s3://mvt-frontend-572664774559-us-east-1/ --delete
+aws cloudfront create-invalidation --distribution-id E2JPNGN2TCNNV8 --paths "/*"
 ```
 
-### Configuration File (`agents/config.py`)
+## Project Structure
 
-Centralized configuration with dataclasses:
-- `JiraConfig` - JIRA connection and workflow IDs
-- `GitHubConfig` - Repository details
-- `TelegramConfig` - Bot credentials
-- `ClaudeConfig` - Model and token limits
-- `DynamoDBConfig` - State storage
-
-**Component-to-Agent Routing:**
-```python
-COMPONENT_TO_AGENT = {
-    "backend-lambda": "code",
-    "infrastructure-cdk": "architect",
-    "frontend-react": "code",
-    "api-spec": "architect",
-    "database": "architect",
-    "security": "test",
-    "docs": "docs",
-    "deployment": "deploy",
-}
+```
+mvt-trilogy/
+├── .github/workflows/          # CI/CD pipelines
+├── agents/                     # SDLC AI agent system
+│   ├── orchestrator.py         # Master orchestrator (900+ lines)
+│   ├── config.py               # Centralized configuration
+│   └── subagents/              # Specialized agents
+│       ├── code_agent.py       # Code generation + PR creation
+│       ├── test_agent.py       # Test execution + coverage
+│       ├── deploy_agent.py     # Deployment + canary rollback
+│       └── docs_agent.py       # Confluence documentation
+├── cdk/                        # AWS CDK infrastructure
+│   ├── lib/stacks/             # 7 CDK stacks
+│   └── lib/handlers/           # Lambda function code
+│       ├── ingestion/          # 6 data pollers
+│       ├── processing/         # 8 processing functions
+│       ├── relay/              # Cross-cloud relay (AWS→GCP)
+│       └── sre/                # 5 SRE/observability functions
+├── frontend/                   # Dashboard (S3/CloudFront)
+│   └── index.html              # Single-page app with 5 tabs
+├── telegram-bot/               # Telegram bot Lambda
+│   └── lambda_function.py      # Deployed handler with JIRA+Claude
+├── terraform/                  # GCP infrastructure
+│   └── modules/                # Pub/Sub, BigQuery, Functions, etc.
+└── tests/                      # Test suite (139+ tests)
+    ├── unit/                   # Unit tests (mocked)
+    ├── integration/            # Integration tests
+    └── smoke/                  # End-to-end smoke tests
 ```
 
-**Canary Settings:**
-```python
-CANARY_TRAFFIC_PERCENT = 10          # Start with 10% new version
-CANARY_DURATION_MINUTES = 5          # Monitor for 5 minutes
-CANARY_ERROR_THRESHOLD = 1.0         # Rollback if error rate > 1%
+## AWS Resources
+
+| Service | Resource | Purpose |
+|---------|----------|---------|
+| Lambda | 21 functions (mvt-* prefix) | Data pipeline + processing + SRE |
+| DynamoDB | 4 tables | Signals, dashboard-state, connections, history |
+| API Gateway | WebSocket API | Real-time dashboard updates |
+| EventBridge | 6 schedule rules | Poller triggers |
+| S3 | Frontend bucket | Static dashboard hosting |
+| CloudFront | Distribution E2JPNGN2TCNNV8 | CDN for dashboard |
+| CloudWatch | MVT-Observatory dashboard | System monitoring |
+| SNS | mvt-alerts topic | Alert notifications |
+
+## GCP Resources (Terraform)
+
+| Service | Resource | Purpose |
+|---------|----------|---------|
+| Pub/Sub | 3 topics + 3 DLQs | Cross-cloud event relay |
+| Cloud Functions | 3 Gen 2 functions | Signal processing, analytics, GDELT |
+| BigQuery | mvt_analytics dataset | Historical analytics (4 tables) |
+| Firestore | mvt-observer DB | Real-time state sync |
+| Cloud Scheduler | GDELT extraction | 15-min extraction trigger |
+
+## Data Pipeline
+
+```
+Pollers (6) → DynamoDB signals → EventBridge → Processing Lambdas (5)
+→ DynamoDB dashboard-state → DynamoDB Streams → ws-broadcast
+→ WebSocket API Gateway → Dashboard (browser)
+                        → event-relay → GCP Pub/Sub → Cloud Functions → BigQuery
 ```
 
-## Installation
+**Key constraint**: All DynamoDB numeric values MUST use `Decimal(str(value))`, never Python `float`.
 
-```bash
-# Install dependencies
-pip install -r agents/requirements.txt
-pip install -r telegram-bot/requirements.txt
+## Sprint History
 
-# Or combined
-pip install -r agents/requirements.txt -r telegram-bot/requirements.txt
-```
+| Sprint | Theme | Stories | Key Deliverables |
+|--------|-------|---------|------------------|
+| 1 | Live Data | 22 PRs | End-to-end data pipeline, 4 dashboard tabs, WebSocket real-time |
+| 2 | Smart Agents | 8 stories | SDLC agents wired to real JIRA/GitHub/Claude APIs, 112 unit tests |
+| 3 | Cross-Cloud | 7 stories | AWS→GCP relay, BigQuery pipeline, alerts, history, sector sentiment |
+| 4 | SRE Observatory | 7 stories | Tab 5, cost tracking, health checks, anomaly detection, capacity planning |
+| 5 | Magic Demo | 6 stories | Integration tests, dashboard polish, documentation |
 
-## Usage
-
-### Running the Orchestrator
-
-```python
-import asyncio
-from agents.orchestrator import SprintOrchestrator
-from agents.config import load_config
-
-async def main():
-    config = load_config()
-    orchestrator = SprintOrchestrator(config)
-
-    # Run sprint execution
-    success = await orchestrator.run(sprint_id="1")
-    return 0 if success else 1
-
-if __name__ == "__main__":
-    exit(asyncio.run(main()))
-```
-
-### Telegram Bot Webhook
-
-Deploy `telegram-bot/handler.py` as AWS Lambda:
-
-```bash
-# Package for Lambda
-zip lambda.zip telegram-bot/handler.py telegram-bot/config.py
-
-# Deploy to Lambda
-aws lambda create-function \
-  --function-name mvt-telegram-bot \
-  --runtime python3.11 \
-  --role arn:aws:iam::ACCOUNT:role/lambda-role \
-  --handler handler.lambda_handler \
-  --zip-file fileb://lambda.zip \
-  --environment Variables='{...}'
-
-# Register webhook
-curl -X POST \
-  https://api.telegram.org/bot{BOT_TOKEN}/setWebhook \
-  -d url=https://{LAMBDA_API_ENDPOINT}/
-```
-
-### Manual Test
-
-```bash
-# Test orchestrator
-python agents/orchestrator.py
-
-# Test code agent
-python agents/subagents/code_agent.py
-
-# Test test agent
-python agents/subagents/test_agent.py
-
-# Test deploy agent
-python agents/subagents/deploy_agent.py
-
-# Test telegram bot
-python telegram-bot/handler.py
-```
-
-## Logging
-
-Structured JSON logging for CloudWatch/ELK:
-
-```json
-{
-  "timestamp": "2025-03-18T10:30:45.123456",
-  "level": "INFO",
-  "message": {
-    "action": "load_sprint",
-    "sprint_id": "1",
-    "story_count": 12
-  }
-}
-```
-
-All components use structured logging with:
-- Standardized timestamp format
-- JSON payload for log aggregation
-- Action/context in each log
-- Error details for debugging
-
-## Error Handling
-
-**Retry Logic:**
-- HTTP requests: 3 retries with exponential backoff
-- Rate limit handling (429 status)
-- Timeout handling (60-600 seconds per operation)
-
-**Validation:**
-- JIRA API response validation
-- GitHub PR creation verification
-- Code syntax checking
-- Test result parsing
-
-**Rollback Support:**
-- Automatic canary rollback on errors
-- GitHub branch cleanup on failure
-- Issue transition rollback
-
-## Performance
-
-**Concurrency:**
-- Parallel wave execution (up to 3 stories per wave)
-- Async/await throughout
-- CloudWatch metrics polling
-
-**Timeouts:**
-- Code generation: 60 seconds
-- Test execution: 300 seconds (5 minutes)
-- Deployment: 600 seconds (10 minutes)
-- Canary monitoring: 5 minutes
-
-**Rate Limiting:**
-- JIRA: 60 requests/60s
-- GitHub: 60 requests/60s
-- Claude: 50 requests/60s
+**Progress**: 43 of 51 stories DONE, 4 PARTIAL, 4 NOT STARTED
 
 ## Testing
 
 ```bash
-# Unit tests (mocked integrations)
-pytest tests/
+# All unit tests (139 passing)
+pytest tests/unit/ -v
 
-# Integration tests (real JIRA/GitHub)
+# Smoke tests (26 pass without AWS creds, 35 with)
+pytest tests/smoke/test_e2e_smoke.py -v
+
+# Integration tests (requires AWS credentials)
 pytest tests/integration/ -v
-
-# Load testing
-locust -f tests/load/locustfile.py
 ```
 
-## Troubleshooting
+## Deployment (via CloudShell)
 
-**Orchestrator fails to load sprint:**
-- Check JIRA credentials and board ID
-- Verify project key matches
-- Check network connectivity
+```bash
+# Lambda deployment pattern
+cd ~/mvt-trilogy-fresh
+git pull origin main
+cd cdk/lib/handlers/<category>/<function-name>
+zip -j /tmp/<function-name>.zip index.py
+aws lambda update-function-code --function-name mvt-<function-name> \
+  --zip-file fileb:///tmp/<function-name>.zip --region us-east-1
 
-**Subagent execution fails:**
-- Check agent assignment logic in `assign_to_agent()`
-- Verify Claude API key and rate limits
-- Review component labels in story
+# Frontend deployment
+aws s3 sync frontend/ s3://mvt-frontend-572664774559-us-east-1/ --delete
+aws cloudfront create-invalidation --distribution-id E2JPNGN2TCNNV8 --paths "/*"
 
-**Deployment rollback triggered:**
-- Check CloudWatch metrics
-- Review error rate threshold
-- Check Lambda function logs
+# SRE Lambdas (all at once)
+bash cdk/lib/handlers/sre/deploy-all.sh
+```
 
-**Telegram bot not responding:**
-- Verify bot token is correct
-- Check webhook is registered
-- Review DynamoDB table exists
-- Check IAM permissions
+## Configuration
 
-## Contributing
+Environment variables are set per Lambda in the AWS Console. Key variables:
 
-1. Follow Python style guide (Black, isort)
-2. Add type hints to all functions
-3. Include docstrings (Google style)
-4. Write tests for new agents
-5. Update config.py for new settings
+- `DASHBOARD_STATE_TABLE`: `mvt-dashboard-state`
+- `SIGNALS_TABLE`: `mvt-signals`
+- `EVENT_BUS_NAME`: `mvt-event-bus`
+- `TELEGRAM_BOT_TOKEN`: Bot token for alerts
+- `TELEGRAM_CHAT_ID`: Chat ID for notifications
+- `GCP_PROJECT_ID`: `mvt-observer`
+- `GCP_SA_KEY_JSON`: Service account key (for cross-cloud relay)
 
 ## License
 
-Proprietary - Macro Vulnerability Trilogy Project
-
-## Support
-
-For issues or questions, open an issue or contact the MVT team.
+Proprietary — Macro Vulnerability Trilogy Project
