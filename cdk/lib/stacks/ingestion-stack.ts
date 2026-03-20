@@ -37,6 +37,10 @@ export class IngestionStack extends cdk.Stack {
       eventBus
     );
     this.functions.push(fredFunction);
+    new events.Rule(this, "FredSchedule", {
+      ruleName: "mvt-fred-hourly",
+      schedule: events.Schedule.rate(cdk.Duration.hours(1)),
+    }).addTarget(new targets.LambdaFunction(fredFunction));
 
     // 2. Trends Poller (Google Trends via pytrends)
     const trendsFunction = this.createLambdaFunction(
@@ -53,6 +57,10 @@ export class IngestionStack extends cdk.Stack {
       512
     );
     this.functions.push(trendsFunction);
+    new events.Rule(this, "TrendsSchedule", {
+      ruleName: "mvt-trends-4h",
+      schedule: events.Schedule.rate(cdk.Duration.hours(4)),
+    }).addTarget(new targets.LambdaFunction(trendsFunction));
 
     // 3. Finnhub Connector
     const finnhubFunction = this.createLambdaFunction(
@@ -68,6 +76,10 @@ export class IngestionStack extends cdk.Stack {
       eventBus
     );
     this.functions.push(finnhubFunction);
+    new events.Rule(this, "FinnhubSchedule", {
+      ruleName: "mvt-finnhub-2min",
+      schedule: events.Schedule.rate(cdk.Duration.minutes(2)),
+    }).addTarget(new targets.LambdaFunction(finnhubFunction));
 
     // 4. GDELT Querier (Global Database of Events, Language and Tone)
     const gdeltFunction = this.createLambdaFunction(
@@ -84,6 +96,10 @@ export class IngestionStack extends cdk.Stack {
       512
     );
     this.functions.push(gdeltFunction);
+    new events.Rule(this, "GdeltSchedule", {
+      ruleName: "mvt-gdelt-15min",
+      schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
+    }).addTarget(new targets.LambdaFunction(gdeltFunction));
 
     // 5. World Bank Poller
     const worldbankFunction = this.createLambdaFunction(
@@ -99,6 +115,10 @@ export class IngestionStack extends cdk.Stack {
       eventBus
     );
     this.functions.push(worldbankFunction);
+    new events.Rule(this, "WorldbankSchedule", {
+      ruleName: "mvt-worldbank-daily",
+      schedule: events.Schedule.rate(cdk.Duration.days(1)),
+    }).addTarget(new targets.LambdaFunction(worldbankFunction));
 
     // 6. YFinance Streamer (VIX, FX, ETFs)
     const yfinanceFunction = this.createLambdaFunction(
@@ -114,6 +134,10 @@ export class IngestionStack extends cdk.Stack {
       eventBus
     );
     this.functions.push(yfinanceFunction);
+    new events.Rule(this, "YfinanceSchedule", {
+      ruleName: "mvt-yfinance-5min",
+      schedule: events.Schedule.rate(cdk.Duration.minutes(5)),
+    }).addTarget(new targets.LambdaFunction(yfinanceFunction));
 
     // Outputs
     new cdk.CfnOutput(this, "IngestionFunctionsCount", {
