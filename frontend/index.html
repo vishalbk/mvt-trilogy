@@ -385,6 +385,161 @@
             color: #00ff41;
         }
 
+        /* SRE Observatory Tab */
+        .sre-health-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .health-card {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            padding: 1.2rem;
+            text-align: center;
+        }
+
+        .health-card .health-label {
+            font-size: 0.8rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .health-card .health-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .health-card .health-value.healthy { color: #00ff41; }
+        .health-card .health-value.warning { color: #ffaa00; }
+        .health-card .health-value.critical { color: #ff4444; }
+        .health-card .health-value.degraded { color: #ffaa00; }
+
+        .health-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .health-badge.healthy { background: rgba(0,255,65,0.15); color: #00ff41; }
+        .health-badge.warning { background: rgba(255,170,0,0.15); color: #ffaa00; }
+        .health-badge.critical { background: rgba(255,68,68,0.15); color: #ff4444; }
+        .health-badge.degraded { background: rgba(255,170,0,0.15); color: #ffaa00; }
+        .health-badge.missing { background: rgba(136,136,136,0.15); color: #888; }
+
+        .sre-section {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .sre-section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #e0e6ed;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #1e2749;
+        }
+
+        .cost-bar-container {
+            margin-bottom: 0.8rem;
+        }
+
+        .cost-bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-bottom: 0.3rem;
+        }
+
+        .cost-bar {
+            height: 6px;
+            background: #1e2749;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .cost-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .fn-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        .fn-table th {
+            text-align: left;
+            padding: 0.5rem;
+            color: #888;
+            border-bottom: 1px solid #1e2749;
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.5px;
+        }
+
+        .fn-table td {
+            padding: 0.5rem;
+            border-bottom: 1px solid #0f1229;
+            color: #ccc;
+        }
+
+        .fn-table tr:hover td {
+            background: rgba(0,217,255,0.03);
+        }
+
+        .capacity-meter {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .capacity-meter-label {
+            font-size: 0.8rem;
+            color: #aaa;
+            width: 140px;
+            flex-shrink: 0;
+        }
+
+        .capacity-meter-bar {
+            flex: 1;
+            height: 8px;
+            background: #1e2749;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .capacity-meter-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .capacity-meter-value {
+            font-size: 0.8rem;
+            color: #ccc;
+            width: 50px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .header-left, .header-right {
@@ -456,6 +611,7 @@
         <button class="tab-btn" data-tab="inequality">Inequality Pulse</button>
         <button class="tab-btn" data-tab="sentiment">Sentiment Seismic</button>
         <button class="tab-btn" data-tab="sovereign">Sovereign Dominoes</button>
+        <button class="tab-btn" data-tab="sre">SRE Observatory</button>
     </div>
 
     <div class="container">
@@ -607,6 +763,191 @@
                 <div class="signal-feed-title">Recent World Bank Signals</div>
                 <div class="signal-list" id="sovereignSignals">
                     <div class="signal-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SRE Observatory Tab -->
+        <div id="sre" class="tab-content">
+            <!-- Health Score & Summary KPIs -->
+            <div class="sre-health-grid">
+                <div class="health-card">
+                    <div class="health-label">Health Score</div>
+                    <div class="health-value healthy" id="sreHealthScore">--</div>
+                </div>
+                <div class="health-card">
+                    <div class="health-label">Status</div>
+                    <div class="health-value" id="sreOverallStatus">
+                        <span class="health-badge healthy" id="sreStatusBadge">--</span>
+                    </div>
+                </div>
+                <div class="health-card">
+                    <div class="health-label">Daily Cost</div>
+                    <div class="health-value" id="sreDailyCost" style="color: #00d9ff;">$--</div>
+                </div>
+                <div class="health-card">
+                    <div class="health-label">Monthly Projected</div>
+                    <div class="health-value" id="sreMonthlyProjected" style="color: #00d9ff;">$--</div>
+                </div>
+                <div class="health-card">
+                    <div class="health-label">24h Invocations</div>
+                    <div class="health-value" id="sreTotalInvocations" style="color: #e0e6ed;">--</div>
+                </div>
+                <div class="health-card">
+                    <div class="health-label">Error Rate</div>
+                    <div class="health-value" id="sreErrorRate" style="color: #00ff41;">--%</div>
+                </div>
+            </div>
+
+            <!-- Component Health Status -->
+            <div class="sre-section">
+                <div class="sre-section-title">Component Health</div>
+                <div id="sreComponentHealth" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; background:#0f1229; border-radius:4px;">
+                        <span style="color:#aaa; font-size:0.85rem;">DynamoDB</span>
+                        <span class="health-badge" id="sreDynamoStatus">--</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; background:#0f1229; border-radius:4px;">
+                        <span style="color:#aaa; font-size:0.85rem;">Lambda Fleet</span>
+                        <span class="health-badge" id="sreLambdaStatus">--</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; background:#0f1229; border-radius:4px;">
+                        <span style="color:#aaa; font-size:0.85rem;">WebSocket</span>
+                        <span class="health-badge" id="sreWebSocketStatus">--</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; background:#0f1229; border-radius:4px;">
+                        <span style="color:#aaa; font-size:0.85rem;">CloudFront</span>
+                        <span class="health-badge" id="sreCloudfrontStatus">--</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; background:#0f1229; border-radius:4px;">
+                        <span style="color:#aaa; font-size:0.85rem;">Data Freshness</span>
+                        <span class="health-badge" id="sreFreshnessStatus">--</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; background:#0f1229; border-radius:4px;">
+                        <span style="color:#aaa; font-size:0.85rem;">EventBridge</span>
+                        <span class="health-badge" id="sreEventBridgeStatus">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cost Breakdown by Group -->
+            <div class="sre-section">
+                <div class="sre-section-title">Cost Breakdown (24h)</div>
+                <div id="sreCostBreakdown">
+                    <div class="cost-bar-container">
+                        <div class="cost-bar-label"><span>Ingestion</span><span id="costIngestion">$0.00</span></div>
+                        <div class="cost-bar"><div class="cost-bar-fill" id="costBarIngestion" style="width:0%; background:#00d9ff;"></div></div>
+                    </div>
+                    <div class="cost-bar-container">
+                        <div class="cost-bar-label"><span>Processing</span><span id="costProcessing">$0.00</span></div>
+                        <div class="cost-bar"><div class="cost-bar-fill" id="costBarProcessing" style="width:0%; background:#00ff41;"></div></div>
+                    </div>
+                    <div class="cost-bar-container">
+                        <div class="cost-bar-label"><span>Realtime</span><span id="costRealtime">$0.00</span></div>
+                        <div class="cost-bar"><div class="cost-bar-fill" id="costBarRealtime" style="width:0%; background:#ffaa00;"></div></div>
+                    </div>
+                    <div class="cost-bar-container">
+                        <div class="cost-bar-label"><span>Cross-Cloud</span><span id="costCrosscloud">$0.00</span></div>
+                        <div class="cost-bar"><div class="cost-bar-fill" id="costBarCrosscloud" style="width:0%; background:#ff6b6b;"></div></div>
+                    </div>
+                    <div class="cost-bar-container">
+                        <div class="cost-bar-label"><span>SRE / Other</span><span id="costSre">$0.00</span></div>
+                        <div class="cost-bar"><div class="cost-bar-fill" id="costBarSre" style="width:0%; background:#888;"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Baseline -->
+            <div class="sre-section">
+                <div class="sre-section-title">Performance Baseline (7-day)</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                    <div class="health-card">
+                        <div class="health-label">Fleet P50</div>
+                        <div class="health-value" id="sreFleetP50" style="color:#00d9ff; font-size:1.3rem;">-- ms</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Fleet P90</div>
+                        <div class="health-value" id="sreFleetP90" style="color:#ffaa00; font-size:1.3rem;">-- ms</div>
+                    </div>
+                    <div class="health-card">
+                        <div class="health-label">Fleet P99</div>
+                        <div class="health-value" id="sreFleetP99" style="color:#ff6b6b; font-size:1.3rem;">-- ms</div>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="fn-table" id="srePerfTable">
+                        <thead>
+                            <tr>
+                                <th>Function</th>
+                                <th>Invocations (7d)</th>
+                                <th>P50 ms</th>
+                                <th>P90 ms</th>
+                                <th>P99 ms</th>
+                                <th>Error Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="srePerfTableBody">
+                            <tr><td colspan="6" style="color:#666; text-align:center;">Waiting for data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Capacity Planning -->
+            <div class="sre-section">
+                <div class="sre-section-title">Capacity Planning</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <div>
+                        <h4 style="color:#aaa; font-size:0.85rem; margin-bottom:0.8rem;">Lambda Concurrency</h4>
+                        <div class="capacity-meter">
+                            <span class="capacity-meter-label">Utilization</span>
+                            <div class="capacity-meter-bar"><div class="capacity-meter-fill" id="sreConcurrencyBar" style="width:0%; background:#00d9ff;"></div></div>
+                            <span class="capacity-meter-value" id="sreConcurrencyPct">0%</span>
+                        </div>
+                        <div style="font-size:0.75rem; color:#666; margin-top:0.3rem;">
+                            Max: <span id="sreMaxConcurrent">0</span> / 1000 limit
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color:#aaa; font-size:0.85rem; margin-bottom:0.8rem;">DynamoDB Storage</h4>
+                        <div class="capacity-meter">
+                            <span class="capacity-meter-label">Total Size</span>
+                            <div class="capacity-meter-bar"><div class="capacity-meter-fill" id="sreDynamoSizeBar" style="width:0%; background:#00ff41;"></div></div>
+                            <span class="capacity-meter-value" id="sreDynamoSize">0 MB</span>
+                        </div>
+                        <div style="font-size:0.75rem; color:#666; margin-top:0.3rem;">
+                            Items: <span id="sreDynamoItems">0</span> | Throttles (24h): <span id="sreDynamoThrottles">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top: 1.5rem;">
+                    <h4 style="color:#aaa; font-size:0.85rem; margin-bottom:0.8rem;">Cost Projections</h4>
+                    <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:0.8rem;">
+                        <div class="health-card" style="padding:0.8rem;">
+                            <div class="health-label" style="font-size:0.7rem;">Daily</div>
+                            <div style="color:#00d9ff; font-size:1.1rem; font-weight:600;" id="sreProjDaily">$--</div>
+                        </div>
+                        <div class="health-card" style="padding:0.8rem;">
+                            <div class="health-label" style="font-size:0.7rem;">Monthly</div>
+                            <div style="color:#00d9ff; font-size:1.1rem; font-weight:600;" id="sreProjMonthly">$--</div>
+                        </div>
+                        <div class="health-card" style="padding:0.8rem;">
+                            <div class="health-label" style="font-size:0.7rem;">Quarterly</div>
+                            <div style="color:#00d9ff; font-size:1.1rem; font-weight:600;" id="sreProjQuarterly">$--</div>
+                        </div>
+                        <div class="health-card" style="padding:0.8rem;">
+                            <div class="health-label" style="font-size:0.7rem;">Yearly</div>
+                            <div style="color:#00d9ff; font-size:1.1rem; font-weight:600;" id="sreProjYearly">$--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Rate Chart -->
+            <div class="sre-section">
+                <div class="sre-section-title">Error Rate by Function Group</div>
+                <div class="chart-container" style="height: 250px;">
+                    <canvas id="sreErrorChart"></canvas>
                 </div>
             </div>
         </div>
@@ -788,6 +1129,10 @@
                         value: Object.keys(countryScores || {}).length + ' countries',
                         timestamp: payload.timestamp || new Date().toISOString()
                     });
+                }
+                // SRE Observatory data
+                if (dashboard === 'sre_observatory') {
+                    updateSREDashboard(payload);
                 }
                 if (dashboard === 'sovereign_dominoes' && panel === 'contagion_paths') {
                     if (payload.path_count !== undefined) {
@@ -1086,10 +1431,206 @@
             drawSparkline('sparkline-vix', state.sparklineData.vixLevel, '#00d9ff');
         }
 
+        // === SRE OBSERVATORY DATA HANDLING ===
+
+        const sreState = {
+            healthScore: null,
+            overallStatus: null,
+            costSummary: null,
+            groupCosts: {},
+            perfBaseline: null,
+            capacity: null,
+            functionMetrics: []
+        };
+
+        function updateSREDashboard(data) {
+            // Called when dashboard='sre_observatory' messages come in
+            const panel = data.panel || data.metric;
+
+            if (panel === 'health_status') {
+                sreState.healthScore = data.health_score;
+                sreState.overallStatus = data.overall_status;
+                const scoreEl = document.getElementById('sreHealthScore');
+                scoreEl.textContent = (data.health_score || 0).toFixed(1);
+                scoreEl.className = 'health-value ' + (data.overall_status || 'healthy');
+
+                const badge = document.getElementById('sreStatusBadge');
+                badge.textContent = (data.overall_status || '--').toUpperCase();
+                badge.className = 'health-badge ' + (data.overall_status || 'healthy');
+
+                // Update component scores
+                if (data.component_scores) {
+                    updateComponentBadge('sreDynamoStatus', data.component_scores.dynamodb);
+                    updateComponentBadge('sreLambdaStatus', data.component_scores.lambda);
+                    updateComponentBadge('sreWebSocketStatus', data.component_scores.websocket);
+                    updateComponentBadge('sreCloudfrontStatus', data.component_scores.cloudfront);
+                    updateComponentBadge('sreFreshnessStatus', data.component_scores.freshness);
+                }
+            }
+
+            if (panel === 'cost_summary') {
+                sreState.costSummary = data;
+                document.getElementById('sreDailyCost').textContent = '$' + (data.total_cost_24h || 0).toFixed(4);
+                document.getElementById('sreMonthlyProjected').textContent = '$' + (data.monthly_projected || 0).toFixed(2);
+                document.getElementById('sreTotalInvocations').textContent = formatNumber(data.total_invocations_24h || 0);
+                const errRate = data.overall_error_rate || 0;
+                const errEl = document.getElementById('sreErrorRate');
+                errEl.textContent = errRate.toFixed(2) + '%';
+                errEl.style.color = errRate > 5 ? '#ff4444' : errRate > 1 ? '#ffaa00' : '#00ff41';
+
+                // Update group cost bars
+                if (data.group_costs) {
+                    sreState.groupCosts = data.group_costs;
+                    updateCostBars(data.group_costs, data.total_cost_24h || 0.0001);
+                }
+            }
+
+            if (panel === 'perf_baseline_summary') {
+                sreState.perfBaseline = data;
+                document.getElementById('sreFleetP50').textContent = (data.fleet_p50_ms || 0).toFixed(1) + ' ms';
+                document.getElementById('sreFleetP90').textContent = (data.fleet_p90_ms || 0).toFixed(1) + ' ms';
+                document.getElementById('sreFleetP99').textContent = (data.fleet_p99_ms || 0).toFixed(1) + ' ms';
+            }
+
+            if (panel === 'capacity_summary') {
+                sreState.capacity = data;
+                const concPct = data.lambda_utilization_pct || 0;
+                document.getElementById('sreConcurrencyPct').textContent = concPct.toFixed(1) + '%';
+                document.getElementById('sreConcurrencyBar').style.width = Math.min(concPct, 100) + '%';
+                document.getElementById('sreConcurrencyBar').style.background = concPct > 70 ? '#ff4444' : concPct > 40 ? '#ffaa00' : '#00d9ff';
+                document.getElementById('sreMaxConcurrent').textContent = data.lambda_max_concurrent || 0;
+
+                const sizeMB = data.dynamo_total_size_mb || 0;
+                document.getElementById('sreDynamoSize').textContent = sizeMB.toFixed(1) + ' MB';
+                document.getElementById('sreDynamoSizeBar').style.width = Math.min(sizeMB / 100 * 100, 100) + '%';
+                document.getElementById('sreDynamoItems').textContent = formatNumber(data.dynamo_total_items || 0);
+                document.getElementById('sreDynamoThrottles').textContent = data.dynamo_total_throttles_24h || 0;
+            }
+
+            if (panel === 'cost_projections') {
+                document.getElementById('sreProjDaily').textContent = '$' + (data.daily || 0).toFixed(4);
+                document.getElementById('sreProjMonthly').textContent = '$' + (data.monthly_flat || 0).toFixed(2);
+                document.getElementById('sreProjQuarterly').textContent = '$' + (data.quarterly_flat || 0).toFixed(2);
+                document.getElementById('sreProjYearly').textContent = '$' + (data.yearly_flat || 0).toFixed(2);
+            }
+
+            // Per-function baseline data for the table
+            if (panel && panel.startsWith('baseline_mvt-')) {
+                const fnName = panel.replace('baseline_', '');
+                const existing = sreState.functionMetrics.findIndex(f => f.function_name === fnName);
+                const row = {
+                    function_name: fnName,
+                    invocations_7d: data.invocations_7d || 0,
+                    p50_ms: data.p50_ms || 0,
+                    p90_ms: data.p90_ms || 0,
+                    p99_ms: data.p99_ms || 0,
+                    error_rate_7d: data.error_rate_7d || 0
+                };
+                if (existing >= 0) {
+                    sreState.functionMetrics[existing] = row;
+                } else {
+                    sreState.functionMetrics.push(row);
+                }
+                updatePerfTable();
+            }
+        }
+
+        function updateComponentBadge(elementId, score) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            let status = 'healthy';
+            if (score === undefined || score === null) status = 'missing';
+            else if (score >= 80) status = 'healthy';
+            else if (score >= 50) status = 'warning';
+            else status = 'critical';
+            el.textContent = status.toUpperCase();
+            el.className = 'health-badge ' + status;
+        }
+
+        function updateCostBars(groupCosts, totalCost) {
+            const groups = ['ingestion', 'processing', 'realtime', 'crosscloud', 'sre'];
+            const barIds = ['costBarIngestion', 'costBarProcessing', 'costBarRealtime', 'costBarCrosscloud', 'costBarSre'];
+            const labelIds = ['costIngestion', 'costProcessing', 'costRealtime', 'costCrosscloud', 'costSre'];
+
+            groups.forEach((group, i) => {
+                const cost = groupCosts[group] || 0;
+                const pct = totalCost > 0 ? (cost / totalCost * 100) : 0;
+                document.getElementById(labelIds[i]).textContent = '$' + cost.toFixed(6);
+                document.getElementById(barIds[i]).style.width = Math.max(pct, 1) + '%';
+            });
+        }
+
+        function updatePerfTable() {
+            const body = document.getElementById('srePerfTableBody');
+            if (!sreState.functionMetrics.length) return;
+
+            const sorted = [...sreState.functionMetrics].sort((a, b) => b.invocations_7d - a.invocations_7d);
+            body.innerHTML = sorted.map(fn => {
+                const errColor = fn.error_rate_7d > 5 ? '#ff4444' : fn.error_rate_7d > 1 ? '#ffaa00' : '#00ff41';
+                return `<tr>
+                    <td style="font-family:monospace; font-size:0.75rem;">${fn.function_name}</td>
+                    <td>${formatNumber(fn.invocations_7d)}</td>
+                    <td>${fn.p50_ms.toFixed(1)}</td>
+                    <td>${fn.p90_ms.toFixed(1)}</td>
+                    <td>${fn.p99_ms.toFixed(1)}</td>
+                    <td style="color:${errColor};">${fn.error_rate_7d.toFixed(2)}%</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function formatNumber(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return String(Math.round(n));
+        }
+
+        function initSREErrorChart() {
+            const ctx = document.getElementById('sreErrorChart');
+            if (!ctx) return;
+
+            if (state.charts.sreErrors) state.charts.sreErrors.destroy();
+
+            // Placeholder data - will be filled by real metrics
+            const labels = ['Ingestion', 'Processing', 'Realtime', 'Cross-Cloud', 'SRE'];
+            const errRates = [0, 0, 0, 0, 0];
+            const colors = ['#00d9ff', '#00ff41', '#ffaa00', '#ff6b6b', '#888'];
+
+            state.charts.sreErrors = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Error Rate %',
+                        data: errRates,
+                        backgroundColor: colors.map(c => c + '44'),
+                        borderColor: colors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#1e2749', drawBorder: false },
+                            ticks: { color: '#666', callback: v => v + '%' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#888' }
+                        }
+                    }
+                }
+            });
+        }
+
         // Initialize
         updateTimestamp();
         setInterval(updateTimestamp, 1000);
         updateAllSparklines();
+        initSREErrorChart();
     </script>
 </body>
 </html>
