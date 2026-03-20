@@ -7,8 +7,9 @@ terraform {
     }
   }
 
-  backend "local" {
-    path = "terraform.tfstate"
+  backend "gcs" {
+    # bucket and prefix are provided via -backend-config in CI
+    # For local dev: terraform init -backend-config="bucket=mvt-observer-terraform-state" -backend-config="prefix=dev"
   }
 }
 

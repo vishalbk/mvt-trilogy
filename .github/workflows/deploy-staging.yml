@@ -90,7 +90,7 @@ jobs:
           cd terraform
           echo "pubsub_signals_topic=$(terraform output -raw pubsub_signals_topic)" >> $GITHUB_OUTPUT
           echo "bigquery_dataset=$(terraform output -raw bigquery_dataset_id)" >> $GITHUB_OUTPUT
-          echo "hosting_url=$(terraform output -raw firebase_hosting_url)" >> $GITHUB_OUTPUT
+          echo "hosting_url=$(terraform output -raw hosting_bucket_url)" >> $GITHUB_OUTPUT
         env:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID_STAGING }}
 
