@@ -4,6 +4,7 @@ import urllib.request
 import urllib.error
 import time
 from datetime import datetime, timedelta
+from decimal import Decimal
 import boto3
 import logging
 
@@ -108,17 +109,18 @@ def write_to_dynamodb(series_data: dict) -> None:
         try:
             if obs.get('value') and obs['value'] != '.':
                 value = float(obs['value'])
+                decimal_value = Decimal(str(value))
                 signal_id = f"fred#{series_id}#{obs['date']}"
 
                 item = {
                     'dashboard': 'inequality_pulse',
                     'signalId_timestamp': signal_id,
                     'source': 'fred',
-                    'value': value,
+                    'value': decimal_value,
                     'raw_data': {
                         'series_id': series_id,
                         'date': obs['date'],
-                        'value': value,
+                        'value': decimal_value,
                         'description': FRED_SERIES.get(series_id, '')
                     },
                     'ttl': ttl_timestamp
