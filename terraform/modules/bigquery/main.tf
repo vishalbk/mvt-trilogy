@@ -33,11 +33,11 @@ locals {
 }
 
 resource "google_bigquery_dataset" "mvt_analytics" {
-  dataset_id           = local.dataset_id
-  project              = var.project_id
-  friendly_name        = "MVT Analytics Dataset"
-  description          = "Analytics dataset for Macro Vulnerability Trilogy signals, events, and indicators"
-  location             = "US"
+  dataset_id                  = local.dataset_id
+  project                     = var.project_id
+  friendly_name               = "MVT Analytics Dataset"
+  description                 = "Analytics dataset for Macro Vulnerability Trilogy signals, events, and indicators"
+  location                    = "US"
   default_table_expiration_ms = null
 
   labels = {
@@ -161,9 +161,9 @@ output "project_id" {
 
 output "tables" {
   value = {
-    inequality_signals    = google_bigquery_table.inequality_signals.table_id
-    sentiment_events      = google_bigquery_table.sentiment_events.table_id
-    sovereign_indicators  = google_bigquery_table.sovereign_indicators.table_id
-    gdelt_events          = google_bigquery_table.gdelt_events.table_id
+    inequality_signals   = google_bigquery_table.inequality_signals.table_id
+    sentiment_events     = google_bigquery_table.sentiment_events.table_id
+    sovereign_indicators = google_bigquery_table.sovereign_indicators.table_id
+    gdelt_events         = google_bigquery_table.gdelt_events.table_id
   }
 }
