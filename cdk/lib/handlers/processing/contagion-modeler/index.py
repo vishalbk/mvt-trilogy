@@ -16,25 +16,28 @@ SIGNALS_TABLE = os.environ.get('SIGNALS_TABLE')
 DASHBOARD_STATE_TABLE = os.environ.get('DASHBOARD_STATE_TABLE')
 EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME')
 
-# Risk score weights
+# Risk score weights (aligned with worldbank-poller indicators)
 WEIGHTS = {
-    'reserve_adequacy': 0.30,
-    'debt_sustainability': 0.25,
-    'currency_pressure': 0.25,
-    'gdp_trajectory': 0.20
+    'gni_vulnerability': 0.35,    # Low GNI per capita = high vulnerability
+    'inequality': 0.35,           # High Gini = high contagion risk
+    'unemployment': 0.30          # High unemployment = high stress
 }
 
 COUNTRIES = ['ARG', 'TUR', 'EGY', 'PAK', 'NGA', 'BRA', 'ZAF', 'MEX', 'IDN', 'IND']
 
 
 def get_sovereign_indicators() -> dict:
-    """Fetch sovereign indicators from DynamoDB."""
+    """Fetch sovereign indicators from DynamoDB.
+
+    The worldbank-poller writes signals with keys like:
+      worldbank#ARG#NY.GNP.PCAP.CD#2023
+    where 'value' is already a 0-100 signal score.
+    """
     table = dynamodb.Table(SIGNALS_TABLE)
     indicators = defaultdict(lambda: {
-        'reserves': None,
-        'external_debt': None,
-        'fx_depreciation': None,
-        'gdp_growth': None
+        'gni_signal': None,
+        'gini_signal': None,
+        'unemployment_signal': None
     })
 
     try:
@@ -48,21 +51,22 @@ def get_sovereign_indicators() -> dict:
         for item in response.get('Items', []):
             sort_key = item.get('signalId_timestamp', '')
 
-            # Extract country from sort key
+            # Extract country from sort key (format: worldbank#COUNTRY#INDICATOR#DATE)
             parts = sort_key.split('#')
-            if len(parts) >= 2:
+            if len(parts) >= 3:
                 country = parts[1]
 
-                if 'FI.RES.TOTL.CD' in sort_key:
-                    indicators[country]['reserves'] = float(item.get('value', 0))
-                elif 'DT.DOD.DECT.GN.ZS' in sort_key:
-                    indicators[country]['external_debt'] = float(item.get('value', 0))
-                elif 'NY.GDP.MKTP.KD.ZG' in sort_key:
-                    indicators[country]['gdp_growth'] = float(item.get('value', 0))
-                elif 'USD' in sort_key and '=X' in sort_key:
-                    # FX data - store for depreciation calculation
-                    indicators[country]['fx_depreciation'] = float(item.get('monthly_change_pct', 0))
+                # Value is already a 0-100 signal score from worldbank-poller
+                signal_value = float(item.get('value', 0))
 
+                if 'NY.GNP.PCAP.CD' in sort_key:
+                    indicators[country]['gni_signal'] = signal_value
+                elif 'SI.POV.GINI' in sort_key:
+                    indicators[country]['gini_signal'] = signal_value
+                elif 'SL.UEM.TOTL.ZS' in sort_key:
+                    indicators[country]['unemployment_signal'] = signal_value
+
+        logger.info(f"Found indicators for {len(indicators)} countries")
         return dict(indicators)
 
     except Exception as e:
@@ -70,78 +74,48 @@ def get_sovereign_indicators() -> dict:
         return {}
 
 
-def normalize_value(value: float, min_val: float, max_val: float) -> float:
-    """Normalize a value to 0-100 scale."""
-    if value is None or max_val == min_val:
-        return 0.0
-
-    normalized = ((value - min_val) / (max_val - min_val)) * 100
-    return max(0, min(100, normalized))
-
-
-def compute_reserve_adequacy(reserves: float) -> float:
-    """Compute reserve adequacy score (higher reserves = lower risk)."""
-    if reserves is None or reserves <= 0:
-        return 100.0  # Max risk if no reserves
-
-    # Normalize based on adequacy threshold (USD billions)
-    # Higher values = more reserves = lower risk
-    reserve_score = normalize_value(reserves, 10_000_000_000, 500_000_000_000)
-    return 100 - reserve_score  # Invert: more reserves = lower risk
-
-
-def compute_debt_sustainability(external_debt: float) -> float:
-    """Compute debt sustainability score (0-100% GNI)."""
-    if external_debt is None:
-        return 50.0  # Neutral if unknown
-
-    # Normalize 0-80% GNI range
-    return normalize_value(external_debt, 0, 80)
-
-
-def compute_currency_pressure(fx_depreciation: float) -> float:
-    """Compute currency pressure score (30-day depreciation)."""
-    if fx_depreciation is None:
-        return 0.0
-
-    # Positive depreciation = pressure; normalize 0-30% range
-    return normalize_value(abs(fx_depreciation), 0, 30)
-
-
-def compute_gdp_trajectory(gdp_growth: float) -> float:
-    """Compute GDP trajectory score (negative growth = risk)."""
-    if gdp_growth is None:
-        return 50.0  # Neutral if unknown
-
-    # Normalize -5% to +5% range
-    # Negative growth = risk
-    trajectory = normalize_value(gdp_growth, -5, 5)
-    return 100 - trajectory  # Invert: growth reduces risk
-
-
 def compute_country_risk_score(indicators: dict) -> float:
-    """Compute risk score for a country (0-100)."""
+    """Compute risk score for a country (0-100).
+
+    Indicators already arrive as 0-100 signal scores from worldbank-poller:
+    - gni_signal: Low GNI = high score (high vulnerability)
+    - gini_signal: High Gini = high score (high inequality)
+    - unemployment_signal: High unemployment = high score (high stress)
+    """
     risk_score = 0.0
+    components_found = 0
 
-    # Reserve adequacy
-    reserve_score = compute_reserve_adequacy(indicators['reserves'])
-    risk_score += reserve_score * WEIGHTS['reserve_adequacy']
-    logger.debug(f"Reserve adequacy contribution: {reserve_score * WEIGHTS['reserve_adequacy']:.2f}")
+    # GNI vulnerability (already 0-100, higher = more vulnerable)
+    if indicators['gni_signal'] is not None:
+        risk_score += indicators['gni_signal'] * WEIGHTS['gni_vulnerability']
+        components_found += 1
+        logger.info(f"  GNI contribution: {indicators['gni_signal'] * WEIGHTS['gni_vulnerability']:.2f}")
 
-    # Debt sustainability
-    debt_score = compute_debt_sustainability(indicators['external_debt'])
-    risk_score += debt_score * WEIGHTS['debt_sustainability']
-    logger.debug(f"Debt sustainability contribution: {debt_score * WEIGHTS['debt_sustainability']:.2f}")
+    # Inequality (already 0-100, higher = more unequal)
+    if indicators['gini_signal'] is not None:
+        risk_score += indicators['gini_signal'] * WEIGHTS['inequality']
+        components_found += 1
+        logger.info(f"  Gini contribution: {indicators['gini_signal'] * WEIGHTS['inequality']:.2f}")
 
-    # Currency pressure
-    fx_score = compute_currency_pressure(indicators['fx_depreciation'])
-    risk_score += fx_score * WEIGHTS['currency_pressure']
-    logger.debug(f"Currency pressure contribution: {fx_score * WEIGHTS['currency_pressure']:.2f}")
+    # Unemployment stress (already 0-100, higher = more stressed)
+    if indicators['unemployment_signal'] is not None:
+        risk_score += indicators['unemployment_signal'] * WEIGHTS['unemployment']
+        components_found += 1
+        logger.info(f"  Unemployment contribution: {indicators['unemployment_signal'] * WEIGHTS['unemployment']:.2f}")
 
-    # GDP trajectory
-    gdp_score = compute_gdp_trajectory(indicators['gdp_growth'])
-    risk_score += gdp_score * WEIGHTS['gdp_trajectory']
-    logger.debug(f"GDP trajectory contribution: {gdp_score * WEIGHTS['gdp_trajectory']:.2f}")
+    if components_found == 0:
+        return 0.0
+
+    # Scale up if not all components present
+    if components_found < 3:
+        total_weight = sum(
+            w for k, w in WEIGHTS.items()
+            if (k == 'gni_vulnerability' and indicators['gni_signal'] is not None) or
+               (k == 'inequality' and indicators['gini_signal'] is not None) or
+               (k == 'unemployment' and indicators['unemployment_signal'] is not None)
+        )
+        if total_weight > 0:
+            risk_score = risk_score / total_weight * 1.0  # Normalize to available weights
 
     return min(100, max(0, risk_score))
 
