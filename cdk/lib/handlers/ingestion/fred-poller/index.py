@@ -23,7 +23,12 @@ FRED_BASE_URL = 'https://api.stlouisfed.org/fred/series/observations'
 FRED_SERIES = {
     'DRCCLACBS': 'Consumer credit delinquency',
     'TDSP': 'Debt service ratio',
-    'NFCIC': 'Financial conditions credit'
+    'NFCIC': 'Financial conditions credit',
+    'M2NS': 'M2 money supply',
+    'UNRATE': 'Unemployment rate',
+    'DCOILWTICO': 'WTI crude oil price',
+    'T10Y2Y': '10Y-2Y Treasury yield spread',
+    'UMCSENT': 'Consumer sentiment'
 }
 
 
@@ -50,6 +55,11 @@ def compute_inequality_score(fred_data: dict) -> float:
     - DRCCLACBS (delinquency): >2.5% is high stress
     - TDSP (debt service): >10% is high stress
     - NFCIC (financial tightening): >0 indicates tightening
+    - M2NS: scale 15000-25000 (billions) to 0-100
+    - UNRATE: scale 3-10 (%) to 0-100
+    - DCOILWTICO: scale 40-120 (USD) to 0-100
+    - T10Y2Y: scale -1 to 3 to 0-100 (inverted yield = stress)
+    - UMCSENT: scale 50-100 to 0-100 (inverted: low sentiment = high stress)
     """
     scores = []
 
@@ -66,6 +76,21 @@ def compute_inequality_score(fred_data: dict) -> float:
                 # Financial conditions: tightening (>0) is stress, loosen (<0) is relief
                 # Scale -5 to 5 to 0-100
                 score = max(0, min(100, (val + 5) / 10.0 * 100))
+            elif series_id == 'M2NS':
+                # M2 money supply: scale 15000-25000 (billions) to 0-100
+                score = max(0, min(100, (val - 15000) / (25000 - 15000) * 100))
+            elif series_id == 'UNRATE':
+                # Unemployment rate: scale 3-10 (%) to 0-100
+                score = max(0, min(100, (val - 3) / (10 - 3) * 100))
+            elif series_id == 'DCOILWTICO':
+                # WTI crude oil price: scale 40-120 (USD) to 0-100
+                score = max(0, min(100, (val - 40) / (120 - 40) * 100))
+            elif series_id == 'T10Y2Y':
+                # 10Y-2Y Treasury yield spread: scale -1 to 3 to 0-100 (inverted: negative spread = stress)
+                score = max(0, min(100, (val - (-1)) / (3 - (-1)) * 100))
+            elif series_id == 'UMCSENT':
+                # Consumer sentiment: scale 50-100 to 0-100 (inverted: low sentiment = high stress)
+                score = max(0, min(100, 100 - (val - 50) / (100 - 50) * 100))
             else:
                 score = 0
             scores.append(score)

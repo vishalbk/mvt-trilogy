@@ -19,8 +19,11 @@ EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME')
 # Tickers to fetch
 TICKERS = {
     '%5EVIX': {'dashboard': 'sentiment_seismic', 'name': 'VIX'},
-    'GC%3DF': {'dashboard': 'sentiment_seismic', 'name': 'Gold'},
-    'VWOB': {'dashboard': 'sovereign_dominoes', 'name': 'EM ETF'}
+    'EURUSD%3DX': {'dashboard': 'sovereign_dominoes', 'name': 'EUR/USD'},
+    'GBPUSD%3DX': {'dashboard': 'sovereign_dominoes', 'name': 'GBP/USD'},
+    'SPY': {'dashboard': 'sentiment_seismic', 'name': 'SPY'},
+    'QQQ': {'dashboard': 'sentiment_seismic', 'name': 'QQQ'},
+    'TLT': {'dashboard': 'sovereign_dominoes', 'name': 'TLT'}
 }
 
 
@@ -65,19 +68,31 @@ def fetch_price_data(ticker_encoded: str, ticker_name: str, max_retries: int = 3
 def price_to_signal_value(ticker_name: str, price: float) -> float:
     """
     Convert raw price to 0-100 signal value.
-    VIX: scale 10-30 to 0-100
-    Gold: scale 1500-2100 to 0-100
-    EM ETF: scale 40-60 to 0-100
+    VIX: scale 10-40 to 0-100
+    EURUSD: scale 1.00-1.20 to 0-100
+    GBPUSD: scale 1.15-1.40 to 0-100
+    SPY: scale 350-550 to 0-100
+    QQQ: scale 300-500 to 0-100
+    TLT: scale 80-130 to 0-100
     """
     if ticker_name == 'VIX':
-        # VIX 10-30 normalized to 0-100
-        return max(0, min(100, (price - 10) / 20.0 * 100))
-    elif ticker_name == 'Gold':
-        # Gold 1500-2100 normalized to 0-100
-        return max(0, min(100, (price - 1500) / 600.0 * 100))
-    elif ticker_name == 'EM ETF':
-        # EM ETF 40-60 normalized to 0-100
-        return max(0, min(100, (price - 40) / 20.0 * 100))
+        # VIX 10-40 normalized to 0-100
+        return max(0, min(100, (price - 10) / 30.0 * 100))
+    elif ticker_name == 'EUR/USD':
+        # EURUSD 1.00-1.20 normalized to 0-100
+        return max(0, min(100, (price - 1.00) / 0.20 * 100))
+    elif ticker_name == 'GBP/USD':
+        # GBPUSD 1.15-1.40 normalized to 0-100
+        return max(0, min(100, (price - 1.15) / 0.25 * 100))
+    elif ticker_name == 'SPY':
+        # SPY 350-550 normalized to 0-100
+        return max(0, min(100, (price - 350) / 200.0 * 100))
+    elif ticker_name == 'QQQ':
+        # QQQ 300-500 normalized to 0-100
+        return max(0, min(100, (price - 300) / 200.0 * 100))
+    elif ticker_name == 'TLT':
+        # TLT 80-130 normalized to 0-100
+        return max(0, min(100, (price - 80) / 50.0 * 100))
     else:
         # Default: raw price as percentage (0-100)
         return max(0, min(100, price))
