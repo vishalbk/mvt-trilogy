@@ -1,5 +1,5 @@
 {
-  "name": "mvt-realtime-handlers",
+  "name": "mvt-ws-broadcast-handler",
   "version": "1.0.0",
   "description": "WebSocket handlers for MVT Trilogy realtime dashboards",
   "main": "index.js",
