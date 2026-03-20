@@ -68,7 +68,12 @@ const broadcastToConnections = async (
 
   for (const connection of connections) {
     // Check if connection is subscribed to this dashboard
-    if (!connection.subscribedDashboards.includes(dashboard)) {
+    // subscribedDashboards may be a Set (from DynamoDB SS type) or an Array
+    const subs = connection.subscribedDashboards;
+    const isSubscribed = subs instanceof Set ? subs.has(dashboard)
+      : Array.isArray(subs) ? subs.includes(dashboard)
+      : true; // If no subscription info, broadcast to all
+    if (!isSubscribed) {
       console.log(`Skipping connection ${connection.connectionId} - not subscribed to ${dashboard}`);
       continue;
     }
