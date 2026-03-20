@@ -135,6 +135,38 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Get CDK outputs
+        id: cdk-outputs
+        run: |
+          BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name MVT-Frontend-dev --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text 2>/dev/null || echo "")
+          DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name MVT-Frontend-dev --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" --output text 2>/dev/null || echo "")
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "distribution_id=$DISTRIBUTION_ID" >> $GITHUB_OUTPUT
+
+      - name: Upload dashboard to S3
+        if: steps.cdk-outputs.outputs.bucket_name != ''
+        run: |
+          aws s3 sync frontend/ s3://${{ steps.cdk-outputs.outputs.bucket_name }}/ --delete
+          echo "Dashboard uploaded to S3"
+
+      - name: Invalidate CloudFront cache
+        if: steps.cdk-outputs.outputs.distribution_id != ''
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ steps.cdk-outputs.outputs.distribution_id }} --paths "/*"
+          echo "CloudFront cache invalidated"
+
+      - name: Update Telegram bot Lambda
+        run: |
+          cd telegram-bot
+          zip -j /tmp/telegram-bot.zip lambda_function.py
+          aws lambda update-function-code --function-name mvt-telegram-bot --zip-file fileb:///tmp/telegram-bot.zip
+          aws lambda wait function-updated --function-name mvt-telegram-bot
+          aws lambda update-function-configuration --function-name mvt-telegram-bot \
+            --timeout 60 \
+            --environment "Variables={TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }},ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},JIRA_BASE_URL=https://themarketgraph.atlassian.net,JIRA_EMAIL=nemesisvbk@gmail.com,JIRA_API_TOKEN=${{ secrets.JIRA_API_TOKEN }},JIRA_PROJECT_KEY=MVT,DASHBOARD_URL=https://d2p9otbgwjwwuv.cloudfront.net,CLAUDE_MODEL=claude-opus-4-6,CLAUDE_MODEL_CODING=claude-sonnet-4-6}"
+          echo "Telegram bot Lambda updated"
+        continue-on-error: true
+
   integration-tests:
     needs:
       - deploy-gcp-staging

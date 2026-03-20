@@ -69,7 +69,10 @@ def jira_api(method, endpoint, data=None):
 def call_claude_api(system_prompt, user_message, model="claude-opus-4-6", max_tokens=1024):
     """Call Anthropic Claude API via direct HTTP request."""
     if not ANTHROPIC_API_KEY:
+        print("ANTHROPIC_API_KEY is not set — using fallback")
         return None
+
+    print(f"Calling Claude API: model={model}, key_prefix={ANTHROPIC_API_KEY[:20]}...")
 
     payload = {
         "model": model,
@@ -93,17 +96,21 @@ def call_claude_api(system_prompt, user_message, model="claude-opus-4-6", max_to
             headers=headers,
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=55) as resp:
             result = json.loads(resp.read().decode())
+            print(f"Claude API response: status=200, stop_reason={result.get('stop_reason', 'N/A')}")
             if "content" in result and len(result["content"]) > 0:
-                return result["content"][0].get("text", "")
+                text = result["content"][0].get("text", "")
+                print(f"Claude API returned {len(text)} chars")
+                return text
+            print(f"Claude API: unexpected response structure: {json.dumps(result)[:200]}")
             return None
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        print(f"Claude API error {e.code}: {body}")
+        print(f"Claude API HTTP error {e.code}: {body[:500]}")
         return None
     except Exception as e:
-        print(f"Claude API error: {e}")
+        print(f"Claude API exception: {type(e).__name__}: {e}")
         return None
 
 
