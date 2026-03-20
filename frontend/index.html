@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MVT Observatory - Macro Vulnerability Tracking</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: #0a0e27;
+            color: #e0e6ed;
+            line-height: 1.6;
+        }
+
+        /* Header */
+        header {
+            background: #0f1229;
+            border-bottom: 1px solid #1e2749;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #00d9ff;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse-red 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #00ff41;
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .status-text {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .timestamp {
+            font-size: 0.85rem;
+            color: #666;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Tabs */
+        .tabs {
+            background: #0f1229;
+            border-bottom: 1px solid #1e2749;
+            display: flex;
+            gap: 0;
+            padding: 0 1.5rem;
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: #888;
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            font-size: 0.95rem;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            color: #aaa;
+        }
+
+        .tab-btn.active {
+            color: #00d9ff;
+            border-bottom-color: #00d9ff;
+        }
+
+        /* Main container */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* KPI Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .kpi-card {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            transition: border-color 0.2s;
+        }
+
+        .kpi-card:hover {
+            border-color: #2a3a5a;
+        }
+
+        .kpi-label {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #00d9ff;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.5px;
+        }
+
+        .kpi-change {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+
+        .kpi-change.positive {
+            color: #00ff41;
+        }
+
+        .kpi-change.negative {
+            color: #ff4444;
+        }
+
+        /* Chart section */
+        .chart-section {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: #e0e6ed;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 1rem;
+        }
+
+        /* Signal Feed */
+        .signal-feed {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .signal-feed-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 1.5rem;
+            border-bottom: 1px solid #1e2749;
+            color: #e0e6ed;
+        }
+
+        .signal-list {
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .signal-item {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #0f1229;
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 1rem;
+            transition: background-color 0.2s;
+        }
+
+        .signal-item:hover {
+            background-color: #0f1229;
+        }
+
+        .signal-item:last-child {
+            border-bottom: none;
+        }
+
+        .signal-meta {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .signal-id {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #00d9ff;
+            margin-bottom: 0.25rem;
+        }
+
+        .signal-source {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+
+        .signal-time {
+            font-size: 0.75rem;
+            color: #444;
+        }
+
+        .signal-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #00ff41;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .signal-empty {
+            padding: 2rem;
+            text-align: center;
+            color: #666;
+        }
+
+        /* Sector Grid */
+        .sector-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .sector-card {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .sector-name {
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #aaa;
+        }
+
+        .sector-sentiment {
+            font-size: 1.3rem;
+            font-weight: 700;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+
+        .sector-sentiment.bullish {
+            background: #0a2d0a;
+            color: #00ff41;
+        }
+
+        .sector-sentiment.neutral {
+            background: #2a2a1a;
+            color: #ffaa00;
+        }
+
+        .sector-sentiment.bearish {
+            background: #2d0a0a;
+            color: #ff4444;
+        }
+
+        /* Country Risk List */
+        .country-list {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .country-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #1e2749;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .country-row {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #0f1229;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .country-row:last-child {
+            border-bottom: none;
+        }
+
+        .country-name {
+            font-weight: 500;
+        }
+
+        .risk-score {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }
+
+        .risk-score.high {
+            color: #ff4444;
+        }
+
+        .risk-score.medium {
+            color: #ffaa00;
+        }
+
+        .risk-score.low {
+            color: #00ff41;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header-left, .header-right {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .country-header, .country-row {
+                grid-template-columns: 1fr;
+            }
+
+            .chart-container {
+                height: 300px;
+            }
+
+            .tabs {
+                padding: 0 1rem;
+            }
+
+            .tab-btn {
+                padding: 1rem;
+                font-size: 0.85rem;
+            }
+        }
+
+        /* Scrollbar styling */
+        .signal-list::-webkit-scrollbar,
+        .sector-grid::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .signal-list::-webkit-scrollbar-track,
+        .sector-grid::-webkit-scrollbar-track {
+            background: #0a0e27;
+        }
+
+        .signal-list::-webkit-scrollbar-thumb,
+        .sector-grid::-webkit-scrollbar-thumb {
+            background: #1e2749;
+            border-radius: 3px;
+        }
+
+        .signal-list::-webkit-scrollbar-thumb:hover,
+        .sector-grid::-webkit-scrollbar-thumb:hover {
+            background: #2a3a5a;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <div class="logo">MVT Observatory</div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span class="status-text" id="statusText">Connecting...</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="timestamp">Updated: <span id="lastUpdate">--:--:--</span></div>
+        </div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="inequality">Inequality Pulse</button>
+        <button class="tab-btn" data-tab="sentiment">Sentiment Seismic</button>
+        <button class="tab-btn" data-tab="sovereign">Sovereign Dominoes</button>
+    </div>
+
+    <div class="container">
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">Distress Index</div>
+                    <div class="kpi-value" id="distressIndex">--</div>
+                    <div class="kpi-change" id="distressChange"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Trigger Probability</div>
+                    <div class="kpi-value" id="triggerProb">--</div>
+                    <div class="kpi-change" id="triggerChange"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Contagion Risk</div>
+                    <div class="kpi-value" id="contagionRisk">--</div>
+                    <div class="kpi-change" id="contagionChange"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">VIX Level</div>
+                    <div class="kpi-value" id="vixLevel">--</div>
+                    <div class="kpi-change" id="vixChange"></div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <h3 class="chart-title">Distress Index Over Time</h3>
+                <div class="chart-container">
+                    <canvas id="distressChart"></canvas>
+                </div>
+            </div>
+
+            <div class="signal-feed">
+                <div class="signal-feed-title">Live Signal Feed</div>
+                <div class="signal-list" id="signalFeed">
+                    <div class="signal-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inequality Tab -->
+        <div id="inequality" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">CPI YoY</div>
+                    <div class="kpi-value" id="cpiYoY">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Fed Funds Rate</div>
+                    <div class="kpi-value" id="fedRate">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">10Y Treasury</div>
+                    <div class="kpi-value" id="treasury10Y">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">M2 Money Supply</div>
+                    <div class="kpi-value" id="m2Supply">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Unemployment</div>
+                    <div class="kpi-value" id="unemployment">--</div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <h3 class="chart-title">FRED Economic Indicators</h3>
+                <div class="chart-container">
+                    <canvas id="fredChart"></canvas>
+                </div>
+            </div>
+
+            <div class="signal-feed">
+                <div class="signal-feed-title">Recent FRED Signals</div>
+                <div class="signal-list" id="fredSignals">
+                    <div class="signal-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sentiment Tab -->
+        <div id="sentiment" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">Market Sentiment</div>
+                    <div class="kpi-value" id="marketSentiment">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">VIX</div>
+                    <div class="kpi-value" id="vix">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">SPY</div>
+                    <div class="kpi-value" id="spy">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">QQQ</div>
+                    <div class="kpi-value" id="qqq">--</div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+                <h3 class="chart-title">Sector Sentiment</h3>
+                <div class="sector-grid" id="sectorGrid">
+                    <div class="signal-empty">Waiting for data...</div>
+                </div>
+            </div>
+
+            <div class="signal-feed">
+                <div class="signal-feed-title">Recent Sentiment Signals</div>
+                <div class="signal-list" id="sentimentSignals">
+                    <div class="signal-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sovereign Tab -->
+        <div id="sovereign" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">Countries at Risk</div>
+                    <div class="kpi-value" id="countriesAtRisk">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Cascade Probability</div>
+                    <div class="kpi-value" id="cascadeProb">--</div>
+                </div>
+            </div>
+
+            <div class="country-list">
+                <div class="country-header">
+                    <div>Country</div>
+                    <div>Risk Score</div>
+                    <div>Status</div>
+                </div>
+                <div id="countryRiskList">
+                    <div class="signal-empty" style="grid-column: 1/-1;">Waiting for data...</div>
+                </div>
+            </div>
+
+            <div class="signal-feed" style="margin-top: 2rem;">
+                <div class="signal-feed-title">Recent World Bank Signals</div>
+                <div class="signal-list" id="sovereignSignals">
+                    <div class="signal-empty">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State management
+        const state = {
+            connected: false,
+            signals: [],
+            kpis: {},
+            charts: {},
+            reconnectAttempts: 0
+        };
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabName = btn.dataset.tab;
+                document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+                document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+                document.getElementById(tabName).classList.add('active');
+                btn.classList.add('active');
+            });
+        });
+
+        // WebSocket connection
+        function connectWebSocket() {
+            const ws = new WebSocket('wss://g91wyyvc0m.execute-api.us-east-1.amazonaws.com/prod');
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                state.connected = true;
+                state.reconnectAttempts = 0;
+                updateConnectionStatus(true);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('WebSocket message:', data);
+                    updateDashboard(data);
+                    updateTimestamp();
+                } catch (e) {
+                    console.error('Failed to parse WebSocket message:', e);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                state.connected = false;
+                updateConnectionStatus(false);
+                scheduleReconnect();
+            };
+
+            return ws;
+        }
+
+        let wsConnection = connectWebSocket();
+
+        function scheduleReconnect() {
+            state.reconnectAttempts++;
+            const delay = Math.min(5000 * state.reconnectAttempts, 30000);
+            console.log(`Reconnecting in ${delay}ms...`);
+            setTimeout(() => {
+                wsConnection = connectWebSocket();
+            }, delay);
+        }
+
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            if (connected) {
+                indicator.classList.add('connected');
+                statusText.textContent = 'Connected';
+            } else {
+                indicator.classList.remove('connected');
+                statusText.textContent = 'Disconnected';
+            }
+        }
+
+        function updateTimestamp() {
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
+        }
+
+        function updateDashboard(data) {
+            if (data.type === 'dashboard_update') {
+                const dashboard = data.dashboard;
+                const payload = data.data;
+
+                if (dashboard === 'composite' || dashboard === 'overview') {
+                    updateOverviewKPIs(payload);
+                    updateDistressChart(payload);
+                }
+                if (dashboard === 'inequality_pulse') {
+                    updateInequalityKPIs(payload);
+                    updateFredChart(payload);
+                }
+                if (dashboard === 'sentiment_seismic') {
+                    updateSentimentKPIs(payload);
+                    updateSectorSentiment(payload);
+                }
+                if (dashboard === 'sovereign_dominoes') {
+                    updateSovereignKPIs(payload);
+                    updateCountryRisks(payload);
+                }
+            }
+
+            // Handle signal data
+            if (data.signal_id) {
+                addSignal(data);
+            }
+        }
+
+        function addSignal(signal) {
+            state.signals.unshift(signal);
+            if (state.signals.length > 20) state.signals.pop();
+
+            const source = (signal.source || '').toUpperCase();
+            const feedId = source === 'FRED' ? 'fredSignals' :
+                          source.includes('FINNHUB') || source.includes('YFINANCE') ? 'sentimentSignals' :
+                          source === 'WORLDBANK' ? 'sovereignSignals' : 'signalFeed';
+
+            renderSignalFeed(feedId);
+        }
+
+        function renderSignalFeed(feedId) {
+            const container = document.getElementById(feedId);
+            const sourceFilter = feedId === 'fredSignals' ? 'FRED' :
+                                feedId === 'sentimentSignals' ? ['FINNHUB', 'YFINANCE'] :
+                                feedId === 'sovereignSignals' ? 'WORLDBANK' : null;
+
+            const filtered = sourceFilter
+                ? state.signals.filter(s => Array.isArray(sourceFilter) ? sourceFilter.includes((s.source || '').toUpperCase()) : (s.source || '').toUpperCase() === sourceFilter)
+                : state.signals;
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="signal-empty">Waiting for data...</div>';
+                return;
+            }
+
+            container.innerHTML = filtered.map(signal => `
+                <div class="signal-item">
+                    <div class="signal-meta">
+                        <div class="signal-id">${signal.signal_id || 'Unknown'}</div>
+                        <div class="signal-source">${signal.source || 'Unknown'}</div>
+                        <div class="signal-time">${formatTime(signal.timestamp)}</div>
+                    </div>
+                    <div class="signal-value">${formatValue(signal.value)}</div>
+                </div>
+            `).join('');
+        }
+
+        function updateOverviewKPIs(data) {
+            if (data.distress_index !== undefined) {
+                document.getElementById('distressIndex').textContent = formatValue(data.distress_index);
+                state.kpis.distressIndex = data.distress_index;
+            }
+            if (data.trigger_probability !== undefined) {
+                document.getElementById('triggerProb').textContent = formatValue(data.trigger_probability);
+                state.kpis.triggerProb = data.trigger_probability;
+            }
+            if (data.contagion_risk !== undefined) {
+                document.getElementById('contagionRisk').textContent = formatValue(data.contagion_risk);
+                state.kpis.contagionRisk = data.contagion_risk;
+            }
+            if (data.vix_level !== undefined) {
+                document.getElementById('vixLevel').textContent = formatValue(data.vix_level);
+                state.kpis.vixLevel = data.vix_level;
+            }
+        }
+
+        function updateInequalityKPIs(data) {
+            if (data.cpi_yoy !== undefined) document.getElementById('cpiYoY').textContent = formatValue(data.cpi_yoy) + '%';
+            if (data.fed_rate !== undefined) document.getElementById('fedRate').textContent = formatValue(data.fed_rate) + '%';
+            if (data.treasury_10y !== undefined) document.getElementById('treasury10Y').textContent = formatValue(data.treasury_10y) + '%';
+            if (data.m2_supply !== undefined) document.getElementById('m2Supply').textContent = formatValue(data.m2_supply);
+            if (data.unemployment !== undefined) document.getElementById('unemployment').textContent = formatValue(data.unemployment) + '%';
+        }
+
+        function updateSentimentKPIs(data) {
+            if (data.market_sentiment) document.getElementById('marketSentiment').textContent = data.market_sentiment.toUpperCase();
+            if (data.vix !== undefined) document.getElementById('vix').textContent = formatValue(data.vix);
+            if (data.spy !== undefined) document.getElementById('spy').textContent = formatValue(data.spy);
+            if (data.qqq !== undefined) document.getElementById('qqq').textContent = formatValue(data.qqq);
+        }
+
+        function updateSovereignKPIs(data) {
+            if (data.countries_at_risk !== undefined) document.getElementById('countriesAtRisk').textContent = data.countries_at_risk;
+            if (data.cascade_probability !== undefined) document.getElementById('cascadeProb').textContent = formatValue(data.cascade_probability);
+        }
+
+        function updateSectorSentiment(data) {
+            if (!data.sector_sentiment) return;
+            const container = document.getElementById('sectorGrid');
+            container.innerHTML = Object.entries(data.sector_sentiment).map(([sector, sentiment]) => `
+                <div class="sector-card">
+                    <div class="sector-name">${sector}</div>
+                    <div class="sector-sentiment ${sentiment.toLowerCase()}">${sentiment}</div>
+                </div>
+            `).join('');
+        }
+
+        function updateCountryRisks(data) {
+            if (!data.countries) return;
+            const container = document.getElementById('countryRiskList');
+            container.innerHTML = data.countries.map(country => {
+                const riskClass = country.risk_score > 70 ? 'high' : country.risk_score > 40 ? 'medium' : 'low';
+                return `
+                    <div class="country-row">
+                        <div class="country-name">${country.name}</div>
+                        <div class="risk-score ${riskClass}">${country.risk_score}</div>
+                        <div>${country.status || 'Monitoring'}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateDistressChart(data) {
+            if (!data.distress_history) return;
+            initDistressChart(data.distress_history);
+        }
+
+        function updateFredChart(data) {
+            if (!data.fred_history) return;
+            initFredChart(data.fred_history);
+        }
+
+        function initDistressChart(history) {
+            const ctx = document.getElementById('distressChart');
+            if (!ctx) return;
+
+            if (state.charts.distress) state.charts.distress.destroy();
+
+            state.charts.distress = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(h => new Date(h.timestamp).toLocaleTimeString()),
+                    datasets: [{
+                        label: 'Distress Index',
+                        data: history.map(h => h.value),
+                        borderColor: '#00d9ff',
+                        backgroundColor: 'rgba(0, 217, 255, 0.05)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#00d9ff',
+                        pointBorderColor: '#141829',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: '#1e2749',
+                                drawBorder: false
+                            },
+                            ticks: { color: '#666' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#666' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function initFredChart(history) {
+            const ctx = document.getElementById('fredChart');
+            if (!ctx) return;
+
+            if (state.charts.fred) state.charts.fred.destroy();
+
+            state.charts.fred = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(h => new Date(h.timestamp).toLocaleTimeString()),
+                    datasets: [{
+                        label: 'Economic Indicators',
+                        data: history.map(h => h.value),
+                        borderColor: '#00ff41',
+                        backgroundColor: 'rgba(0, 255, 65, 0.05)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#00ff41',
+                        pointBorderColor: '#141829',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            grid: {
+                                color: '#1e2749',
+                                drawBorder: false
+                            },
+                            ticks: { color: '#666' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#666' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function formatValue(val) {
+            if (val === null || val === undefined) return '--';
+            if (typeof val === 'number') {
+                return val.toFixed(2);
+            }
+            return String(val);
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '--';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString();
+        }
+
+        // Initialize
+        updateTimestamp();
+        setInterval(updateTimestamp, 1000);
+    </script>
+</body>
+</html>
