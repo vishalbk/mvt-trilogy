@@ -22,6 +22,8 @@ FINNHUB_BASE_URL = 'https://finnhub.io/api/v1'
 POSITIVE_KEYWORDS = ['bull', 'gain', 'surge', 'rally', 'jump', 'rise', 'spike', 'strong', 'good', 'bullish']
 NEGATIVE_KEYWORDS = ['bear', 'loss', 'crash', 'drop', 'plunge', 'fall', 'decline', 'weak', 'bad', 'bearish']
 
+TICKERS = ['AAPL', 'MSFT', 'TSLA', 'JPM', 'GLD', 'SPY', 'QQQ']
+
 
 def fetch_general_news(max_retries: int = 3) -> list:
     """Fetch general market news articles."""
@@ -40,6 +42,26 @@ def fetch_general_news(max_retries: int = 3) -> list:
     return []
 
 
+def fetch_company_news(symbol: str, max_retries: int = 3) -> list:
+    """Fetch company-specific news articles for a given ticker symbol."""
+    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%d')
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+
+    for attempt in range(max_retries):
+        try:
+            url = f"{FINNHUB_BASE_URL}/company-news?symbol={symbol}&from={yesterday}&to={today}&token={FINNHUB_API_KEY}"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                return data if isinstance(data, list) else []
+        except urllib.error.URLError as e:
+            logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {str(e)}")
+            if attempt < max_retries - 1:
+                continue
+            return []
+    return []
+
+
 def compute_sentiment_score(headline: str) -> float:
     """
     Simple sentiment scoring: count positive vs negative keywords.
@@ -55,6 +77,16 @@ def compute_sentiment_score(headline: str) -> float:
     total = pos_count + neg_count
     # Map to 0-100: more positive = higher score
     return (pos_count / total) * 100
+
+
+def classify_sentiment(score: float) -> str:
+    """Classify sentiment score into categories."""
+    if score > 60:
+        return "bullish"
+    elif score < 40:
+        return "bearish"
+    else:
+        return "neutral"
 
 
 def write_to_dynamodb(articles: list) -> None:
@@ -92,6 +124,35 @@ def write_to_dynamodb(articles: list) -> None:
                 logger.info(f"Wrote article: {headline[:50]}... (sentiment={sentiment_score})")
             except Exception as e:
                 logger.error(f"Error processing article {idx}: {str(e)}")
+
+
+def write_ticker_sentiment_to_dynamodb(ticker: str, sentiment_score: float, article_count: int) -> None:
+    """Write per-ticker sentiment to DynamoDB."""
+    table = dynamodb.Table(SIGNALS_TABLE)
+    ttl_timestamp = int(time.time()) + 30*86400
+    timestamp = int(time.time())
+
+    try:
+        sentiment_classification = classify_sentiment(sentiment_score)
+        signal_id = f"finnhub#{ticker}#{timestamp}"
+
+        item = {
+            'dashboard': 'sentiment_seismic',
+            'signalId_timestamp': signal_id,
+            'source': 'finnhub',
+            'value': sentiment_score,
+            'raw_data': {
+                'ticker': ticker,
+                'sentiment_score': sentiment_score,
+                'sentiment_class': sentiment_classification,
+                'article_count': article_count
+            },
+            'ttl': ttl_timestamp
+        }
+        table.put_item(Item=item)
+        logger.info(f"Wrote {ticker} sentiment: score={sentiment_score}, class={sentiment_classification}, articles={article_count}")
+    except Exception as e:
+        logger.error(f"Error writing {ticker} sentiment to DynamoDB: {str(e)}")
 
 
 def compute_aggregate_sentiment(articles: list) -> float:
@@ -136,20 +197,33 @@ def handler(event, context):
             sentiment_score = compute_aggregate_sentiment(articles)
             publish_event(sentiment_score, len(articles), timestamp)
 
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'Finnhub connector completed',
-                    'sentiment_score': sentiment_score,
-                    'article_count': len(articles)
-                })
-            }
-        else:
-            logger.warning("No articles fetched")
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'message': 'No articles', 'article_count': 0})
-            }
+        # Fetch and process per-ticker sentiment
+        logger.info(f"Fetching company news for {len(TICKERS)} tickers")
+        ticker_sentiments = {}
+
+        for ticker in TICKERS:
+            try:
+                logger.info(f"Fetching company news for {ticker}")
+                company_articles = fetch_company_news(ticker)
+
+                if company_articles:
+                    ticker_sentiment = compute_aggregate_sentiment(company_articles)
+                    ticker_sentiments[ticker] = ticker_sentiment
+                    write_ticker_sentiment_to_dynamodb(ticker, ticker_sentiment, len(company_articles))
+                else:
+                    logger.warning(f"No articles fetched for {ticker}")
+            except Exception as e:
+                logger.error(f"Error processing {ticker}: {str(e)}")
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': 'Finnhub connector completed',
+                'general_sentiment_score': sentiment_score if articles else None,
+                'general_article_count': len(articles) if articles else 0,
+                'ticker_sentiments': ticker_sentiments
+            })
+        }
 
     except Exception as e:
         logger.error(f"Unhandled error: {str(e)}")

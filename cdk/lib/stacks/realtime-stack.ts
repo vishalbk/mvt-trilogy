@@ -51,7 +51,6 @@ export class RealtimeStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
-        WEBSOCKET_API_ENDPOINT: stage.url,
       },
     });
     connectionsTable.grantWriteData(wsConnectFunction);
@@ -86,7 +85,7 @@ export class RealtimeStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(15),
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
-        WEBSOCKET_API_ENDPOINT: stage.url,
+        WEBSOCKET_ENDPOINT: stage.url.replace('wss://', 'https://'),
       },
     });
 

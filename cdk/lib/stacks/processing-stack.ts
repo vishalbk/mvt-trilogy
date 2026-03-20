@@ -29,8 +29,8 @@ export class ProcessingStack extends cdk.Stack {
     const inequalityFunction = this.createProcessingFunction(
       "InequalityScorer",
       "inequality-scorer",
-      "inequality_scorer.handler",
-      { SIGNALS_TABLE: signalsTable.tableName, EVENT_BUS_NAME: eventBus.eventBusName },
+      "index.handler",
+      { SIGNALS_TABLE: signalsTable.tableName, DASHBOARD_STATE_TABLE: dashboardStateTable.tableName, EVENT_BUS_NAME: eventBus.eventBusName },
       signalsTable,
       dashboardStateTable,
       auditTable,
@@ -49,7 +49,7 @@ export class ProcessingStack extends cdk.Stack {
     const sentimentFunction = this.createProcessingFunction(
       "SentimentAggregator",
       "sentiment-aggregator",
-      "sentiment_aggregator.handler",
+      "index.handler",
       { SIGNALS_TABLE: signalsTable.tableName, EVENT_BUS_NAME: eventBus.eventBusName },
       signalsTable,
       dashboardStateTable,
@@ -69,7 +69,7 @@ export class ProcessingStack extends cdk.Stack {
     const contagionFunction = this.createProcessingFunction(
       "ContagionModeler",
       "contagion-modeler",
-      "contagion_modeler.handler",
+      "index.handler",
       { SIGNALS_TABLE: signalsTable.tableName, EVENT_BUS_NAME: eventBus.eventBusName },
       signalsTable,
       dashboardStateTable,
@@ -90,7 +90,7 @@ export class ProcessingStack extends cdk.Stack {
     const routerFunction = this.createProcessingFunction(
       "CrossDashboardRouter",
       "cross-dashboard-router",
-      "cross_dashboard_router.handler",
+      "index.handler",
       { SIGNALS_TABLE: signalsTable.tableName, EVENT_BUS_NAME: eventBus.eventBusName },
       signalsTable,
       dashboardStateTable,
@@ -110,7 +110,7 @@ export class ProcessingStack extends cdk.Stack {
     const compositeFunction = this.createProcessingFunction(
       "VulnerabilityComposite",
       "vulnerability-composite",
-      "vulnerability_composite.handler",
+      "index.handler",
       { SIGNALS_TABLE: signalsTable.tableName, EVENT_BUS_NAME: eventBus.eventBusName },
       signalsTable,
       dashboardStateTable,

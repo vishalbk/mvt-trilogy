@@ -45,7 +45,7 @@ def get_latest_signals() -> dict:
         )
 
         for item in response.get('Items', []):
-            sort_key = item.get('sort_key', '')
+            sort_key = item.get('signalId_timestamp', '')
 
             if 'DRCCLACBS' in sort_key and signals['credit_delinquency'] is None:
                 signals['credit_delinquency'] = float(item.get('value', 0))

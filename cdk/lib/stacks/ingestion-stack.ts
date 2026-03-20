@@ -27,7 +27,7 @@ export class IngestionStack extends cdk.Stack {
     const fredFunction = this.createLambdaFunction(
       "FredPoller",
       "fred-poller",
-      "fred_poller.handler",
+      "index.handler",
       {
         SIGNALS_TABLE: signalsTable.tableName,
         EVENT_BUS_NAME: eventBus.eventBusName,
@@ -42,7 +42,7 @@ export class IngestionStack extends cdk.Stack {
     const trendsFunction = this.createLambdaFunction(
       "TrendsPoller",
       "trends-poller",
-      "trends_poller.handler",
+      "index.handler",
       {
         SIGNALS_TABLE: signalsTable.tableName,
         EVENT_BUS_NAME: eventBus.eventBusName,
@@ -58,7 +58,7 @@ export class IngestionStack extends cdk.Stack {
     const finnhubFunction = this.createLambdaFunction(
       "FinnhubConnector",
       "finnhub-connector",
-      "finnhub_connector.handler",
+      "index.handler",
       {
         SIGNALS_TABLE: signalsTable.tableName,
         EVENT_BUS_NAME: eventBus.eventBusName,
@@ -73,7 +73,7 @@ export class IngestionStack extends cdk.Stack {
     const gdeltFunction = this.createLambdaFunction(
       "GdeltQuerier",
       "gdelt-querier",
-      "gdelt_querier.handler",
+      "index.handler",
       {
         SIGNALS_TABLE: signalsTable.tableName,
         EVENT_BUS_NAME: eventBus.eventBusName,
@@ -89,7 +89,7 @@ export class IngestionStack extends cdk.Stack {
     const worldbankFunction = this.createLambdaFunction(
       "WorldbankPoller",
       "worldbank-poller",
-      "worldbank_poller.handler",
+      "index.handler",
       {
         SIGNALS_TABLE: signalsTable.tableName,
         EVENT_BUS_NAME: eventBus.eventBusName,
@@ -104,7 +104,7 @@ export class IngestionStack extends cdk.Stack {
     const yfinanceFunction = this.createLambdaFunction(
       "YfinanceStreamer",
       "yfinance-streamer",
-      "yfinance_streamer.handler",
+      "index.handler",
       {
         SIGNALS_TABLE: signalsTable.tableName,
         EVENT_BUS_NAME: eventBus.eventBusName,

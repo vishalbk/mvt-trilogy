@@ -31,21 +31,21 @@ module "bigquery" {
 }
 
 module "firestore" {
-  source                = "./modules/firestore"
-  project_id            = var.project_id
-  environment           = var.environment
-  skip_app_engine_init  = var.skip_app_engine_init
+  source               = "./modules/firestore"
+  project_id           = var.project_id
+  environment          = var.environment
+  skip_app_engine_init = var.skip_app_engine_init
 }
 
 module "functions" {
-  source                  = "./modules/functions"
-  project_id              = var.project_id
-  region                  = var.region
-  environment             = var.environment
-  pubsub_signals_topic    = module.pubsub.signals_topic_name
-  pubsub_analytics_topic  = module.pubsub.analytics_topic_name
-  bigquery_dataset_id     = module.bigquery.dataset_id
-  firestore_database      = module.firestore.database_name
+  source                   = "./modules/functions"
+  project_id               = var.project_id
+  region                   = var.region
+  environment              = var.environment
+  pubsub_signals_topic     = module.pubsub.signals_topic_name
+  pubsub_analytics_topic   = module.pubsub.analytics_topic_name
+  bigquery_dataset_id      = module.bigquery.dataset_id
+  firestore_database       = module.firestore.database_name
   aws_event_relay_endpoint = var.aws_event_relay_endpoint
 }
 

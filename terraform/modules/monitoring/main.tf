@@ -24,7 +24,7 @@ resource "google_monitoring_notification_channel" "email" {
 
 # Dashboard
 resource "google_monitoring_dashboard" "mvt_observatory" {
-  project        = var.project_id
+  project = var.project_id
   dashboard_json = jsonencode({
     displayName = "MVT Observatory - GCP"
     mosaicLayout = {

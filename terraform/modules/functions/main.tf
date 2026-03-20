@@ -32,9 +32,9 @@ variable "aws_event_relay_endpoint" {
 }
 
 locals {
-  runtime      = "python312"
-  memory_mb    = 256
-  timeout      = 60
+  runtime       = "python312"
+  memory_mb     = 256
+  timeout       = 60
   min_instances = 0
   max_instances = 5
 }
