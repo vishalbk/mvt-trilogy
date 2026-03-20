@@ -151,6 +151,23 @@ resource "google_bigquery_routine" "daily_correlation" {
   definition_body = file("${path.module}/queries/daily_correlation.sql")
 }
 
+# Materialized view for daily summary aggregations
+resource "google_bigquery_table" "daily_summary" {
+  dataset_id          = google_bigquery_dataset.mvt_analytics.dataset_id
+  table_id            = "daily_summary"
+  project             = var.project_id
+  deletion_protection = false
+
+  materialized_view {
+    query = file("${path.module}/views/daily_summary.sql")
+  }
+
+  labels = {
+    view_type = "materialized"
+    purpose   = "dashboard-kpi"
+  }
+}
+
 output "dataset_id" {
   value = google_bigquery_dataset.mvt_analytics.dataset_id
 }

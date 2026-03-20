@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MVT Real-Time Dashboard (GCP)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            border-bottom: 2px solid rgba(100, 200, 255, 0.3);
+            padding-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #64c8ff, #00d9ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            color: #aaaaaa;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background-color: #00d977;
+            box-shadow: 0 0 10px #00d977;
+        }
+
+        .status-indicator.disconnected {
+            background-color: #ff4757;
+            box-shadow: 0 0 10px #ff4757;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .kpi-card {
+            background: linear-gradient(135deg, rgba(30, 30, 50, 0.9) 0%, rgba(20, 20, 40, 0.9) 100%);
+            border: 1px solid rgba(100, 200, 255, 0.2);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #64c8ff, #00d9ff);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .kpi-card:hover {
+            border-color: rgba(100, 200, 255, 0.6);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 48px rgba(100, 200, 255, 0.15);
+        }
+
+        .kpi-card:hover::before {
+            opacity: 1;
+        }
+
+        .kpi-label {
+            font-size: 0.95em;
+            color: #aaaaaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .kpi-value {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #64c8ff;
+            margin-bottom: 15px;
+            font-family: 'Monaco', monospace;
+        }
+
+        .kpi-change {
+            font-size: 0.9em;
+            color: #888888;
+        }
+
+        .kpi-change.positive {
+            color: #00d977;
+        }
+
+        .kpi-change.negative {
+            color: #ff4757;
+        }
+
+        .kpi-unit {
+            font-size: 0.8em;
+            color: #666666;
+            margin-left: 8px;
+        }
+
+        .metrics-section {
+            background: linear-gradient(135deg, rgba(30, 30, 50, 0.9) 0%, rgba(20, 20, 40, 0.9) 100%);
+            border: 1px solid rgba(100, 200, 255, 0.2);
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+
+        .metrics-section h2 {
+            margin-bottom: 20px;
+            font-size: 1.4em;
+            color: #64c8ff;
+            border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+            padding-bottom: 15px;
+        }
+
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid rgba(100, 200, 255, 0.1);
+        }
+
+        .metric-item:last-child {
+            border-bottom: none;
+        }
+
+        .metric-name {
+            color: #aaaaaa;
+            font-weight: 500;
+        }
+
+        .metric-value {
+            color: #64c8ff;
+            font-family: 'Monaco', monospace;
+            font-weight: 600;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            padding-top: 30px;
+            border-top: 1px solid rgba(100, 200, 255, 0.2);
+            color: #666666;
+            font-size: 0.9em;
+        }
+
+        .error-message {
+            background: linear-gradient(135deg, rgba(255, 71, 87, 0.1) 0%, rgba(255, 50, 70, 0.1) 100%);
+            border: 1px solid rgba(255, 71, 87, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #ff4757;
+        }
+
+        .loading-skeleton {
+            background: linear-gradient(90deg, rgba(100, 200, 255, 0.1) 25%, rgba(100, 200, 255, 0.05) 50%, rgba(100, 200, 255, 0.1) 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+            height: 2em;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        @keyframes loading {
+            0% {
+                background-position: 200% 0;
+            }
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        .last-updated {
+            font-size: 0.8em;
+            color: #666666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <span class="status-indicator connected" id="status-light"></span>
+                MVT Real-Time Dashboard
+            </h1>
+            <p>Cross-Cloud Analytics | GCP Firestore Sync</p>
+            <p id="connection-status" style="font-size: 0.95em; color: #00d977; margin-top: 10px;">
+                Connecting to Firestore...
+            </p>
+        </div>
+
+        <div id="error-container"></div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Distress Index</div>
+                <div class="kpi-value" id="distress-value">
+                    <div class="loading-skeleton"></div>
+                </div>
+                <div class="kpi-change" id="distress-change">--</div>
+                <div class="last-updated" id="distress-updated">--</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">Trigger Probability</div>
+                <div class="kpi-value" id="trigger-value">
+                    <div class="loading-skeleton"></div>
+                </div>
+                <div class="kpi-change" id="trigger-change">--</div>
+                <div class="last-updated" id="trigger-updated">--</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">Contagion Risk</div>
+                <div class="kpi-value" id="contagion-value">
+                    <div class="loading-skeleton"></div>
+                </div>
+                <div class="kpi-change" id="contagion-change">--</div>
+                <div class="last-updated" id="contagion-updated">--</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">VIX Level</div>
+                <div class="kpi-value" id="vix-value">
+                    <div class="loading-skeleton"></div>
+                </div>
+                <div class="kpi-change" id="vix-change">--</div>
+                <div class="last-updated" id="vix-updated">--</div>
+            </div>
+        </div>
+
+        <div class="metrics-section">
+            <h2>Latest Signal Details</h2>
+            <div id="metrics-content">
+                <div class="metric-item">
+                    <span class="metric-name">Event Type</span>
+                    <span class="metric-value" id="metric-event-type">--</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-name">Severity</span>
+                    <span class="metric-value" id="metric-severity">--</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-name">Dashboard</span>
+                    <span class="metric-value" id="metric-dashboard">--</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-name">Last Updated</span>
+                    <span class="metric-value" id="metric-timestamp">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Real-time data synced from GCP Firestore | Updates every 1-5 seconds</p>
+            <p style="margin-top: 10px; color: #555555;">
+                Dashboard powered by Firebase Cloud Firestore | Multi-cloud MVT Pipeline
+            </p>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        // Firebase configuration
+        // This should be injected via Terraform or environment variables
+        // For development, configure with your Firebase project
+        const firebaseConfig = {
+            apiKey: window.FIREBASE_API_KEY || "AIzaSyDemonstration",
+            authDomain: "mvt-gcp.firebaseapp.com",
+            projectId: window.GCP_PROJECT_ID || "mvt-gcp",
+            storageBucket: "mvt-gcp.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdefghijklmnop"
+        };
+
+        let db;
+        let unsubscribe = null;
+
+        async function initializeFirebase() {
+            try {
+                // Initialize Firebase
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                db = firebase.firestore();
+
+                // Enable offline persistence for better resilience
+                db.enablePersistence().catch((err) => {
+                    if (err.code == 'failed-precondition') {
+                        console.warn('Multiple tabs open, persistence disabled');
+                    } else if (err.code == 'unimplemented') {
+                        console.warn('Browser not compatible with offline persistence');
+                    }
+                });
+
+                updateConnectionStatus(true);
+                subscribeToLatestSignal();
+            } catch (error) {
+                console.error('Firebase initialization error:', error);
+                showError('Failed to initialize Firebase: ' + error.message);
+                updateConnectionStatus(false);
+            }
+        }
+
+        function subscribeToLatestSignal() {
+            try {
+                // Subscribe to the _latest document for each dashboard
+                // This example subscribes to 'default' dashboard
+                const dashboardId = 'default';
+
+                if (unsubscribe) {
+                    unsubscribe();
+                }
+
+                unsubscribe = db
+                    .collection('dashboard_signals')
+                    .doc(dashboardId)
+                    .collection('signals')
+                    .doc('_latest')
+                    .onSnapshot(
+                        (doc) => {
+                            if (doc.exists) {
+                                const data = doc.data();
+                                console.log('Signal data updated:', data);
+                                updateDashboard(data);
+                                updateConnectionStatus(true);
+                            } else {
+                                console.log('No latest signal document found');
+                                showError('Waiting for first signal from MVT pipeline...');
+                            }
+                        },
+                        (error) => {
+                            console.error('Error subscribing to signals:', error);
+                            showError('Firestore error: ' + error.message);
+                            updateConnectionStatus(false);
+                        }
+                    );
+
+                console.log('Subscribed to real-time Firestore updates');
+            } catch (error) {
+                console.error('Error setting up subscription:', error);
+                showError('Subscription error: ' + error.message);
+            }
+        }
+
+        function updateDashboard(signalData) {
+            try {
+                // Extract KPI values from signal data
+                const distressIndex = signalData.distress_index || signalData.value || 0;
+                const triggerProb = signalData.trigger_probability || 0;
+                const contagionRisk = signalData.contagion_risk || 0;
+                const vixLevel = signalData.vix_level || 0;
+
+                // Update KPI cards
+                updateKPICard('distress', distressIndex, signalData);
+                updateKPICard('trigger', triggerProb, signalData);
+                updateKPICard('contagion', contagionRisk, signalData);
+                updateKPICard('vix', vixLevel, signalData);
+
+                // Update metric details
+                document.getElementById('metric-event-type').textContent =
+                    signalData.event_type || 'unknown';
+                document.getElementById('metric-severity').textContent =
+                    (signalData.severity || 0).toFixed(2);
+                document.getElementById('metric-dashboard').textContent =
+                    signalData.dashboard_id || 'default';
+
+                const timestamp = signalData.updated_at?.toDate?.() || new Date();
+                document.getElementById('metric-timestamp').textContent =
+                    formatTime(timestamp);
+
+                // Clear any error messages
+                document.getElementById('error-container').innerHTML = '';
+            } catch (error) {
+                console.error('Error updating dashboard:', error);
+                showError('Display error: ' + error.message);
+            }
+        }
+
+        function updateKPICard(kpiName, value, signalData) {
+            const displayValue = typeof value === 'number' ? value.toFixed(2) : value;
+            const valueElement = document.getElementById(`${kpiName}-value`);
+            const changeElement = document.getElementById(`${kpiName}-change`);
+            const updatedElement = document.getElementById(`${kpiName}-updated`);
+
+            // Update value with animation
+            if (valueElement.querySelector('.loading-skeleton')) {
+                valueElement.innerHTML = '';
+            }
+            valueElement.textContent = displayValue;
+
+            // Update change indicator
+            const trend = signalData[`${kpiName}_trend`] || 0;
+            const changeClass = trend > 0 ? 'positive' : 'negative';
+            const changeSymbol = trend > 0 ? '↑' : '↓';
+            changeElement.textContent = `${changeSymbol} ${Math.abs(trend).toFixed(2)}%`;
+            changeElement.className = `kpi-change ${changeClass}`;
+
+            // Update timestamp
+            const timestamp = signalData.updated_at?.toDate?.() || new Date();
+            updatedElement.textContent = `Updated: ${formatTime(timestamp)}`;
+        }
+
+        function updateConnectionStatus(isConnected) {
+            const statusLight = document.getElementById('status-light');
+            const statusText = document.getElementById('connection-status');
+
+            if (isConnected) {
+                statusLight.className = 'status-indicator connected';
+                statusText.textContent = '✓ Connected to Firestore';
+                statusText.style.color = '#00d977';
+            } else {
+                statusLight.className = 'status-indicator disconnected';
+                statusText.textContent = '✗ Disconnected from Firestore';
+                statusText.style.color = '#ff4757';
+            }
+        }
+
+        function showError(message) {
+            const container = document.getElementById('error-container');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            container.innerHTML = '';
+            container.appendChild(errorDiv);
+
+            // Auto-dismiss after 10 seconds
+            setTimeout(() => {
+                if (container.contains(errorDiv)) {
+                    errorDiv.remove();
+                }
+            }, 10000);
+        }
+
+        function formatTime(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffSecs = Math.floor(diffMs / 1000);
+            const diffMins = Math.floor(diffSecs / 60);
+
+            if (diffSecs < 60) {
+                return `${diffSecs}s ago`;
+            } else if (diffMins < 60) {
+                return `${diffMins}m ago`;
+            } else {
+                return date.toLocaleTimeString();
+            }
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', initializeFirebase);
+
+        // Cleanup on page unload
+        window.addEventListener('unload', () => {
+            if (unsubscribe) {
+                unsubscribe();
+            }
+        });
+
+        // Handle page visibility to pause/resume updates
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('Dashboard hidden, pausing Firestore updates');
+                if (unsubscribe) {
+                    unsubscribe();
+                }
+            } else {
+                console.log('Dashboard visible, resuming Firestore updates');
+                if (db) {
+                    subscribeToLatestSignal();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

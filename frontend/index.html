@@ -466,21 +466,25 @@
                     <div class="kpi-label">Distress Index</div>
                     <div class="kpi-value" id="distressIndex">--</div>
                     <div class="kpi-change" id="distressChange"></div>
+                    <div id="sparkline-distress"></div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-label">Trigger Probability</div>
                     <div class="kpi-value" id="triggerProb">--</div>
                     <div class="kpi-change" id="triggerChange"></div>
+                    <div id="sparkline-trigger"></div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-label">Contagion Risk</div>
                     <div class="kpi-value" id="contagionRisk">--</div>
                     <div class="kpi-change" id="contagionChange"></div>
+                    <div id="sparkline-contagion"></div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-label">VIX Level</div>
                     <div class="kpi-value" id="vixLevel">--</div>
                     <div class="kpi-change" id="vixChange"></div>
+                    <div id="sparkline-vix"></div>
                 </div>
             </div>
 
@@ -615,7 +619,13 @@
             signals: [],
             kpis: {},
             charts: {},
-            reconnectAttempts: 0
+            reconnectAttempts: 0,
+            sparklineData: {
+                distressIndex: [],
+                triggerProb: [],
+                contagionRisk: [],
+                vixLevel: []
+            }
         };
 
         // Tab switching
@@ -1038,9 +1048,48 @@
             return date.toLocaleTimeString();
         }
 
+        function drawSparkline(containerId, data, color) {
+            // Create small SVG sparkline (100x30 pixels)
+            // For now, generate sample data if empty (placeholder for when API is deployed)
+            if (!data || data.length === 0) {
+                // Generate sample data points for demo
+                data = [];
+                for (let i = 0; i < 7; i++) {
+                    data.push(Math.random() * 40 + 30);
+                }
+            }
+
+            const width = 100, height = 30;
+            const max = Math.max(...data);
+            const min = Math.min(...data);
+            const range = max - min || 1;
+            const points = data.map((v, i) =>
+                `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * height}`
+            ).join(' ');
+
+            const svg = `<svg width="${width}" height="${height}" style="margin-top:8px; display:block;">
+                <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5"/>
+            </svg>`;
+
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.innerHTML = svg;
+            }
+        }
+
+        function updateAllSparklines() {
+            // Draw sparklines for overview KPIs
+            // Using placeholder data for now - will be replaced with API data when history-api is deployed
+            drawSparkline('sparkline-distress', state.sparklineData.distressIndex, '#00d9ff');
+            drawSparkline('sparkline-trigger', state.sparklineData.triggerProb, '#00d9ff');
+            drawSparkline('sparkline-contagion', state.sparklineData.contagionRisk, '#00d9ff');
+            drawSparkline('sparkline-vix', state.sparklineData.vixLevel, '#00d9ff');
+        }
+
         // Initialize
         updateTimestamp();
         setInterval(updateTimestamp, 1000);
+        updateAllSparklines();
     </script>
 </body>
 </html>

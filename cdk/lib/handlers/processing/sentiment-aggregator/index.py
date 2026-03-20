@@ -218,6 +218,134 @@ def publish_event(probability: float, timestamp: str) -> None:
         raise
 
 
+def get_sector_signals() -> dict:
+    """Fetch signals by sector from signals table.
+
+    Returns a dict mapping sector names to lists of signal values.
+    Sectors: financial, energy, technology, commodities, sovereign
+    """
+    table = dynamodb.Table(SIGNALS_TABLE)
+    sectors = {
+        'financial': [],
+        'energy': [],
+        'technology': [],
+        'commodities': [],
+        'sovereign': []
+    }
+
+    try:
+        response = table.query(
+            KeyConditionExpression='dashboard = :dashboard',
+            ExpressionAttributeValues={':dashboard': 'sentiment_seismic'},
+            ScanIndexForward=False,
+            Limit=100
+        )
+
+        for item in response.get('Items', []):
+            sk = item.get('signalId_timestamp', '').lower()
+            value = float(item.get('value', 50))
+
+            # Classify signals by sector based on signal type
+            # Financial: VIX, credit spreads, bank sentiment
+            if any(x in sk for x in ['vix', 'credit', 'financial', 'bank', 'insurance']):
+                sectors['financial'].append(value)
+            # Energy: Oil, gas, utilities, commodity prices
+            elif any(x in sk for x in ['oil', 'gas', 'energy', 'utility', 'wti', 'brent']):
+                sectors['energy'].append(value)
+            # Technology: NASDAQ, tech stocks, crypto sentiment
+            elif any(x in sk for x in ['nasdaq', 'tech', 'qqq', 'crypto', 'semiconductor']):
+                sectors['technology'].append(value)
+            # Commodities: Gold, agriculture, metals
+            elif any(x in sk for x in ['gold', 'silver', 'commodity', 'agriculture', 'wheat', 'corn']):
+                sectors['commodities'].append(value)
+            # Sovereign: Government bonds, FX, sovereign risk
+            elif any(x in sk for x in ['sovereign', 'bond', 'treasury', 'fx', 'currency', 'yield']):
+                sectors['sovereign'].append(value)
+
+        logger.info(f"Sector signals: {', '.join(f'{k}={len(v)}' for k, v in sectors.items())}")
+        return sectors
+
+    except Exception as e:
+        logger.error(f"Error fetching sector signals: {str(e)}")
+        return sectors
+
+
+def compute_sector_sentiment_scores(sectors: dict) -> dict:
+    """Compute weighted average sentiment score for each sector.
+
+    Returns a dict mapping sector names to dicts with:
+    - value: 0-100 sentiment score
+    - trend: 'rising', 'falling', or 'stable'
+    - change_24h: estimated 24h change
+    """
+    sector_scores = {}
+
+    for sector_name, values in sectors.items():
+        if not values:
+            # If no data, return neutral
+            sector_scores[sector_name] = {
+                'value': 50.0,
+                'trend': 'stable',
+                'change_24h': 0.0
+            }
+            logger.info(f"Sector {sector_name}: No signals, defaulting to 50")
+        else:
+            # Compute weighted average (more recent values weighted higher)
+            total = sum(values)
+            avg_score = total / len(values)
+
+            # Determine trend based on distribution of scores
+            high_scores = sum(1 for v in values if v > 60)
+            low_scores = sum(1 for v in values if v < 40)
+            high_pct = (high_scores / len(values)) * 100 if values else 0
+
+            if high_pct > 60:
+                trend = 'rising'
+            elif low_scores / len(values) > 0.6 if values else False:
+                trend = 'falling'
+            else:
+                trend = 'stable'
+
+            # Estimated 24h change (simplified)
+            change_24h = (high_pct - 50) * 0.2  # Scale bullish/bearish bias
+
+            sector_scores[sector_name] = {
+                'value': round(avg_score, 2),
+                'trend': trend,
+                'change_24h': round(change_24h, 2)
+            }
+            logger.info(f"Sector {sector_name}: avg={avg_score:.2f}, trend={trend}, change_24h={change_24h:.2f}")
+
+    return sector_scores
+
+
+def write_sector_sentiment_to_state(sector_scores: dict, timestamp: str) -> None:
+    """Write sector sentiment scores to dashboard state table.
+
+    For each sector, creates an entry with:
+    dashboard='sentiment_seismic', metric='sector_{name}', value, trend, change_24h
+    """
+    table = dynamodb.Table(DASHBOARD_STATE_TABLE)
+
+    try:
+        for sector_name, scores in sector_scores.items():
+            item = {
+                'dashboard': 'sentiment_seismic',
+                'metric': f'sector_{sector_name}',
+                'value': Decimal(str(scores['value'])),
+                'trend': scores['trend'],
+                'change_24h': Decimal(str(scores['change_24h'])),
+                'timestamp': timestamp,
+                'last_updated': datetime.utcnow().isoformat()
+            }
+            table.put_item(Item=item)
+            logger.info(f"Wrote sector {sector_name}: {scores['value']} ({scores['trend']}) to dashboard state")
+
+    except Exception as e:
+        logger.error(f"Error writing sector sentiment to state table: {str(e)}")
+        raise
+
+
 def lambda_handler(event, context):
     """Main Lambda handler."""
     logger.info("Starting sentiment aggregator")
@@ -233,8 +361,15 @@ def lambda_handler(event, context):
         trigger_probability = compute_trigger_probability(signals)
         logger.info(f"Computed trigger probability: {trigger_probability:.2f}%")
 
-        # Write to state table (include VIX price for frontend display)
+        # Write trigger probability to state table (include VIX price for frontend display)
         write_to_state_table(trigger_probability, signals['vix_price'], timestamp)
+
+        # Compute sector-level sentiment scores
+        logger.info("Computing sector-level sentiment scores")
+        sector_signals = get_sector_signals()
+        sector_scores = compute_sector_sentiment_scores(sector_signals)
+        write_sector_sentiment_to_state(sector_scores, timestamp)
+        logger.info(f"Wrote sector sentiment scores to dashboard state")
 
         # Publish event
         publish_event(trigger_probability, timestamp)
@@ -243,7 +378,8 @@ def lambda_handler(event, context):
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'Sentiment aggregation completed',
-                'trigger_probability': round(trigger_probability, 2)
+                'trigger_probability': round(trigger_probability, 2),
+                'sector_scores': {k: {'value': float(v['value']), 'trend': v['trend']} for k, v in sector_scores.items()}
             })
         }
 
