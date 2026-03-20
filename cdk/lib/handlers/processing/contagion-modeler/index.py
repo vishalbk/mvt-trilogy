@@ -142,9 +142,9 @@ def compute_regional_correlations(country_scores: dict) -> dict:
                         'source': country1,
                         'target': country2,
                         'region': region,
-                        'correlation': 0.65,  # Simplified: countries in same region correlate at 0.65
-                        'source_risk': float(country_scores[country1]),
-                        'target_risk': float(country_scores[country2])
+                        'correlation': Decimal('0.65'),
+                        'source_risk': Decimal(str(round(country_scores[country1], 2))),
+                        'target_risk': Decimal(str(round(country_scores[country2], 2)))
                     })
 
     return {'contagion_paths': contagion_paths}
