@@ -4,6 +4,7 @@ import urllib.request
 import urllib.error
 import time
 from datetime import datetime, timedelta
+from decimal import Decimal
 import boto3
 import logging
 
@@ -95,7 +96,7 @@ def write_to_dynamodb(articles: list) -> None:
     ttl_timestamp = int(time.time()) + 30*86400
     timestamp = datetime.utcnow().isoformat()
 
-    with table.batch_writer(batch_size=25) as batch:
+    with table.batch_writer() as batch:
         for idx, article in enumerate(articles[:10]):
             try:
                 headline = article.get('headline', 'Unknown')
@@ -110,13 +111,13 @@ def write_to_dynamodb(articles: list) -> None:
                     'dashboard': 'sentiment_seismic',
                     'signalId_timestamp': signal_id,
                     'source': 'finnhub',
-                    'value': sentiment_score,
+                    'value': Decimal(str(sentiment_score)),
                     'raw_data': {
                         'headline': headline,
                         'source': source,
                         'url': url,
                         'datetime': dt,
-                        'sentiment_score': sentiment_score
+                        'sentiment_score': Decimal(str(sentiment_score))
                     },
                     'ttl': ttl_timestamp
                 }
@@ -140,10 +141,10 @@ def write_ticker_sentiment_to_dynamodb(ticker: str, sentiment_score: float, arti
             'dashboard': 'sentiment_seismic',
             'signalId_timestamp': signal_id,
             'source': 'finnhub',
-            'value': sentiment_score,
+            'value': Decimal(str(sentiment_score)),
             'raw_data': {
                 'ticker': ticker,
-                'sentiment_score': sentiment_score,
+                'sentiment_score': Decimal(str(sentiment_score)),
                 'sentiment_class': sentiment_classification,
                 'article_count': article_count
             },
