@@ -178,8 +178,8 @@ def compute_trigger_probability(signals: dict) -> float:
     return min(100, max(0, probability))
 
 
-def write_to_state_table(probability: float, timestamp: str) -> None:
-    """Write trigger probability to dashboard state table."""
+def write_to_state_table(probability: float, vix_price: float, timestamp: str) -> None:
+    """Write trigger probability and VIX price to dashboard state table."""
     table = dynamodb.Table(DASHBOARD_STATE_TABLE)
 
     try:
@@ -190,8 +190,10 @@ def write_to_state_table(probability: float, timestamp: str) -> None:
             'timestamp': timestamp,
             'last_updated': datetime.utcnow().isoformat()
         }
+        if vix_price is not None:
+            item['vix_price'] = Decimal(str(round(vix_price, 2)))
         table.put_item(Item=item)
-        logger.info(f"Wrote trigger probability {probability:.2f} to dashboard state table")
+        logger.info(f"Wrote trigger probability {probability:.2f} (VIX: {vix_price}) to dashboard state table")
     except Exception as e:
         logger.error(f"Error writing to state table: {str(e)}")
         raise
@@ -231,8 +233,8 @@ def lambda_handler(event, context):
         trigger_probability = compute_trigger_probability(signals)
         logger.info(f"Computed trigger probability: {trigger_probability:.2f}%")
 
-        # Write to state table
-        write_to_state_table(trigger_probability, timestamp)
+        # Write to state table (include VIX price for frontend display)
+        write_to_state_table(trigger_probability, signals['vix_price'], timestamp)
 
         # Publish event
         publish_event(trigger_probability, timestamp)

@@ -703,12 +703,11 @@
 
                 // Map actual backend data to frontend display fields
                 if (dashboard === 'composite' && panel === 'vulnerability_score') {
-                    // Composite vulnerability → Overview KPIs
+                    // Composite vulnerability → Overview KPIs (VIX comes from sentiment panel, not here)
                     const mapped = {
                         distress_index: payload.vulnerability_score,
                         trigger_probability: payload.component_scores?.sentiment,
-                        contagion_risk: payload.component_scores?.contagion,
-                        vix_level: payload.component_scores?.inequality
+                        contagion_risk: payload.component_scores?.contagion
                     };
                     updateOverviewKPIs(mapped);
                 }
@@ -733,6 +732,18 @@
                     if (prob !== undefined) {
                         document.getElementById('triggerProb').textContent = formatValue(prob) + '%';
                         state.kpis.triggerProb = prob;
+                    }
+                    // VIX price included by sentiment-aggregator
+                    const vix = payload.vix_price;
+                    if (vix !== undefined && vix !== null) {
+                        document.getElementById('vixLevel').textContent = formatValue(vix);
+                        state.kpis.vixLevel = vix;
+                        addSignal({
+                            signal_id: 'yahoo#VIX',
+                            source: 'yfinance',
+                            value: vix,
+                            timestamp: payload.timestamp || new Date().toISOString()
+                        });
                     }
                     addSignal({
                         signal_id: 'trigger_probability',
