@@ -4,6 +4,7 @@ import urllib.request
 import urllib.error
 import time
 from datetime import datetime, timedelta
+from decimal import Decimal
 import boto3
 import logging
 
@@ -110,11 +111,11 @@ def write_to_dynamodb(ticker_name: str, price: float, signal_value: float, dashb
             'dashboard': dashboard,
             'signalId_timestamp': signal_id,
             'source': 'yahoo',
-            'value': signal_value,
+            'value': Decimal(str(signal_value)),
             'raw_data': {
                 'ticker': ticker_name,
-                'price': price,
-                'signal_value': signal_value
+                'price': Decimal(str(price)),
+                'signal_value': Decimal(str(signal_value))
             },
             'ttl': ttl_timestamp
         }

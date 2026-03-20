@@ -4,6 +4,7 @@ import urllib.request
 import urllib.error
 import time
 from datetime import datetime, timedelta
+from decimal import Decimal
 import boto3
 import logging
 
@@ -106,7 +107,7 @@ def write_to_dynamodb(data_records: list) -> None:
     ttl_timestamp = int(time.time()) + 30*86400
     timestamp = datetime.utcnow().isoformat()
 
-    with table.batch_writer(batch_size=25) as batch:
+    with table.batch_writer() as batch:
         for record in data_records:
             try:
                 signal_value = indicator_to_signal_value(record['value'], record['indicator'])
@@ -116,14 +117,14 @@ def write_to_dynamodb(data_records: list) -> None:
                     'dashboard': 'sovereign_dominoes',
                     'signalId_timestamp': signal_id,
                     'source': 'worldbank',
-                    'value': signal_value,
+                    'value': Decimal(str(signal_value)),
                     'raw_data': {
                         'country': record['country'],
                         'indicator': record['indicator'],
                         'indicator_name': INDICATORS.get(record['indicator'], ''),
-                        'value': record['value'],
+                        'value': Decimal(str(record['value'])),
                         'date': record['date'],
-                        'signal_value': signal_value
+                        'signal_value': Decimal(str(signal_value))
                     },
                     'ttl': ttl_timestamp
                 }

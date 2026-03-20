@@ -5,6 +5,7 @@ import urllib.error
 import xml.etree.ElementTree as ET
 import time
 from datetime import datetime, timedelta
+from decimal import Decimal
 import boto3
 import logging
 
@@ -96,7 +97,7 @@ def write_to_dynamodb(trends_data: list) -> None:
     ttl_timestamp = int(time.time()) + 30*86400
     timestamp = datetime.utcnow().isoformat()
 
-    with table.batch_writer(batch_size=25) as batch:
+    with table.batch_writer() as batch:
         for idx, trend in enumerate(trends_data):
             try:
                 title = trend.get('title', 'Unknown')
@@ -112,12 +113,12 @@ def write_to_dynamodb(trends_data: list) -> None:
                     'dashboard': 'inequality_pulse',
                     'signalId_timestamp': signal_id,
                     'source': 'trends',
-                    'value': signal_value,
+                    'value': Decimal(str(signal_value)),
                     'raw_data': {
                         'title': title,
                         'traffic': traffic,
                         'is_distress': is_distress,
-                        'signal_value': signal_value
+                        'signal_value': Decimal(str(signal_value))
                     },
                     'ttl': ttl_timestamp
                 }
