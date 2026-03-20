@@ -16,4 +16,4 @@ terraform.tfvars
 gcp-key.json
 *.pem
 *.key
-package-lock.json
+
