@@ -698,28 +698,105 @@
             if (data.type === 'dashboard_update') {
                 const dashboard = data.dashboard;
                 const payload = data.data;
+                const panel = payload.panel;
+                console.log('Dashboard update:', dashboard, 'panel:', panel, 'payload:', JSON.stringify(payload).substring(0, 200));
 
-                if (dashboard === 'composite' || dashboard === 'overview') {
-                    updateOverviewKPIs(payload);
-                    updateDistressChart(payload);
+                // Map actual backend data to frontend display fields
+                if (dashboard === 'composite' && panel === 'vulnerability_score') {
+                    // Composite vulnerability → Overview KPIs
+                    const mapped = {
+                        distress_index: payload.vulnerability_score,
+                        trigger_probability: payload.component_scores?.sentiment,
+                        contagion_risk: payload.component_scores?.contagion,
+                        vix_level: payload.component_scores?.inequality
+                    };
+                    updateOverviewKPIs(mapped);
                 }
-                if (dashboard === 'inequality_pulse') {
-                    updateInequalityKPIs(payload);
-                    updateFredChart(payload);
+                if (dashboard === 'inequality_pulse' && panel === 'composite_score') {
+                    // Inequality composite score → Inequality KPIs
+                    const score = payload.score;
+                    if (score !== undefined) {
+                        document.getElementById('distressIndex').textContent = formatValue(score);
+                        state.kpis.distressIndex = score;
+                    }
+                    // Also add to signal feed
+                    addSignal({
+                        signal_id: 'inequality_score',
+                        source: 'FRED',
+                        value: score,
+                        timestamp: payload.timestamp || new Date().toISOString()
+                    });
                 }
-                if (dashboard === 'sentiment_seismic') {
-                    updateSentimentKPIs(payload);
-                    updateSectorSentiment(payload);
+                if (dashboard === 'sentiment_seismic' && panel === 'trigger_probability') {
+                    // Sentiment trigger probability → Sentiment KPIs + Overview
+                    const prob = payload.probability;
+                    if (prob !== undefined) {
+                        document.getElementById('triggerProb').textContent = formatValue(prob) + '%';
+                        state.kpis.triggerProb = prob;
+                    }
+                    addSignal({
+                        signal_id: 'trigger_probability',
+                        source: 'FINNHUB',
+                        value: prob,
+                        timestamp: payload.timestamp || new Date().toISOString()
+                    });
                 }
-                if (dashboard === 'sovereign_dominoes') {
-                    updateSovereignKPIs(payload);
-                    updateCountryRisks(payload);
+                if (dashboard === 'sovereign_dominoes' && panel === 'risk_scores') {
+                    // Sovereign risk scores → Sovereign KPIs
+                    const countryScores = payload.country_scores;
+                    if (countryScores) {
+                        const scores = Object.values(countryScores).map(Number);
+                        const atRisk = scores.filter(s => s > 50).length;
+                        const maxRisk = scores.length > 0 ? Math.max(...scores) : 0;
+                        document.getElementById('contagionRisk').textContent = formatValue(maxRisk);
+                        state.kpis.contagionRisk = maxRisk;
+                        document.getElementById('countriesAtRisk').textContent = atRisk;
+                        document.getElementById('cascadeProb').textContent = formatValue(maxRisk);
+
+                        // Build country list for display
+                        const countries = Object.entries(countryScores).map(([code, score]) => ({
+                            name: code,
+                            risk_score: Number(score),
+                            status: Number(score) > 70 ? 'Critical' : Number(score) > 50 ? 'Warning' : 'Monitoring'
+                        })).sort((a, b) => b.risk_score - a.risk_score);
+                        updateCountryRisks({ countries });
+                    }
+                    addSignal({
+                        signal_id: 'sovereign_risk',
+                        source: 'WORLDBANK',
+                        value: Object.keys(countryScores || {}).length + ' countries',
+                        timestamp: payload.timestamp || new Date().toISOString()
+                    });
+                }
+                if (dashboard === 'sovereign_dominoes' && panel === 'contagion_paths') {
+                    if (payload.path_count !== undefined) {
+                        addSignal({
+                            signal_id: 'contagion_paths',
+                            source: 'WORLDBANK',
+                            value: payload.path_count + ' paths',
+                            timestamp: payload.timestamp || new Date().toISOString()
+                        });
+                    }
                 }
             }
 
-            // Handle signal data
-            if (data.signal_id) {
-                addSignal(data);
+            // Handle raw signal data from DynamoDB streams (ingestion table)
+            if (data.type === 'dashboard_update' && data.data) {
+                const p = data.data;
+                // If this looks like raw signal data (has current_price or similar), add to feed
+                if (p.current_price !== undefined || p.aggregate_sentiment || p.event_code) {
+                    addSignal({
+                        signal_id: p.sort_key || p.panel || 'signal',
+                        source: p.source || data.dashboard || 'Unknown',
+                        value: p.current_price || p.score || p.probability || '--',
+                        timestamp: p.timestamp || new Date().toISOString()
+                    });
+                }
+                // Map VIX from signals to overview
+                if (p.sort_key && p.sort_key.includes('^VIX') && p.current_price !== undefined) {
+                    document.getElementById('vixLevel').textContent = formatValue(p.current_price);
+                    state.kpis.vixLevel = p.current_price;
+                }
             }
         }
 
@@ -733,6 +810,10 @@
                           source === 'WORLDBANK' ? 'sovereignSignals' : 'signalFeed';
 
             renderSignalFeed(feedId);
+            // Always update the main signal feed too
+            if (feedId !== 'signalFeed') {
+                renderSignalFeed('signalFeed');
+            }
         }
 
         function renderSignalFeed(feedId) {
