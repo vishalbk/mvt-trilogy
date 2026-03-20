@@ -130,12 +130,12 @@ resource "google_bigquery_table" "gdelt_events" {
   }
 }
 
-# BigQuery saved queries for analytics
+# BigQuery stored procedures for analytics
 resource "google_bigquery_routine" "gdelt_extraction" {
   project      = var.project_id
   dataset_id   = google_bigquery_dataset.mvt_analytics.dataset_id
   routine_id   = "gdelt_extraction"
-  routine_type = "TABLE_VALUED_FUNCTION"
+  routine_type = "PROCEDURE"
   language     = "SQL"
 
   definition_body = file("${path.module}/queries/gdelt_extraction.sql")
@@ -145,7 +145,7 @@ resource "google_bigquery_routine" "daily_correlation" {
   project      = var.project_id
   dataset_id   = google_bigquery_dataset.mvt_analytics.dataset_id
   routine_id   = "daily_correlation"
-  routine_type = "SCALAR_FUNCTION"
+  routine_type = "PROCEDURE"
   language     = "SQL"
 
   definition_body = file("${path.module}/queries/daily_correlation.sql")
