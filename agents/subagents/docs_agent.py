@@ -7,8 +7,10 @@ and release notes. Uses Confluence REST API v2.
 
 import json
 import logging
+import base64
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 import requests
 from anthropic import Anthropic
@@ -167,6 +169,80 @@ class ConfluenceClient:
             )
             return None
 
+    def create_page_v1(
+        self,
+        space_key: str,
+        title: str,
+        body_html: str,
+        parent_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create a new Confluence page using REST API v1."""
+        try:
+            url = f"{self.base_url}/rest/api/content"
+
+            payload = {
+                "type": "page",
+                "space": {"key": space_key},
+                "title": title,
+                "body": {
+                    "storage": {
+                        "value": body_html,
+                        "representation": "storage",
+                    }
+                },
+            }
+
+            if parent_id:
+                payload["ancestors"] = [{"id": parent_id}]
+
+            response = self.session.post(url, json=payload)
+            response.raise_for_status()
+
+            page_data = response.json()
+
+            logger.info(
+                json.dumps({
+                    "action": "create_page_v1",
+                    "page_id": page_data.get("id"),
+                    "title": title,
+                })
+            )
+
+            return page_data
+
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "create_page_v1",
+                    "error": str(e),
+                })
+            )
+            return None
+
+    def search_pages(self, space_key: str, title: str) -> Optional[List[Dict[str, Any]]]:
+        """Search for pages in a space by title using CQL."""
+        try:
+            url = f"{self.base_url}/rest/api/content/search"
+            cql = f'space="{space_key}" AND title="{title}"'
+            params = {"cql": cql, "limit": 10}
+
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+
+            data = response.json()
+            return data.get("results", [])
+
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "search_pages",
+                    "space_key": space_key,
+                    "title": title,
+                    "error": str(e),
+                })
+            )
+            return None
+
 
 class DocsAgent:
     """Specialized agent for documentation generation."""
@@ -174,40 +250,47 @@ class DocsAgent:
     def __init__(self, config: Dict):
         """Initialize docs agent."""
         self.config = config
+
+        # Use JIRA config credentials for Confluence
+        jira_config = config["jira"]
+        confluence_base_url = jira_config.base_url.rstrip("/") + "/wiki"
+
         self.confluence = ConfluenceClient(
-            base_url=config.get("confluence_url", "https://confluence.example.com"),
-            email=config.get("confluence_email", ""),
-            api_token=config.get("confluence_token", ""),
+            base_url=confluence_base_url,
+            email=jira_config.email,
+            api_token=jira_config.api_token,
         )
         self.claude = Anthropic(api_key=config["claude"].api_key)
+        self.jira_base_url = jira_config.base_url.rstrip("/")
 
     async def generate_sprint_report(
         self,
         sprint_id: str,
-        stories: List[Dict[str, Any]],
-        results: Dict[str, Any],
+        stories: List[Dict[str, Any]] = None,
+        results: Dict[str, Any] = None,
     ) -> DocsResult:
         """Generate sprint report and post to Confluence."""
         try:
+            # Fetch sprint data from JIRA if not provided
+            if stories is None or results is None:
+                sprint_data = self._fetch_sprint_data_from_jira(sprint_id)
+                stories = sprint_data.get("stories", [])
+                results = sprint_data.get("results", {})
+
             # Generate report content using Claude
             content = await self._generate_report_content(sprint_id, stories, results)
 
-            # Create Confluence page
-            space_id = self.confluence.get_space_id("MVT")
-            if not space_id:
-                raise RuntimeError("Could not find MVT space")
-
-            page_data = self.confluence.create_page(
-                space_id=space_id,
+            # Create Confluence page using v1 API
+            page_data = self.confluence.create_page_v1(
+                space_key="MVT",
                 title=f"Sprint {sprint_id} Report",
-                body=content,
-                content_format="storage",
+                body_html=content,
             )
 
             if not page_data:
                 raise RuntimeError("Failed to create Confluence page")
 
-            page_url = f"{self.config.get('confluence_url')}/wiki/spaces/MVT/pages/{page_data['id']}"
+            page_url = f"{self.jira_base_url}/wiki/spaces/MVT/pages/{page_data['id']}"
 
             result = DocsResult(
                 status="success",
@@ -256,22 +339,17 @@ class DocsAgent:
                 acceptance_criteria,
             )
 
-            # Create Confluence page
-            space_id = self.confluence.get_space_id("MVT")
-            if not space_id:
-                raise RuntimeError("Could not find MVT space")
-
-            page_data = self.confluence.create_page(
-                space_id=space_id,
+            # Create Confluence page using v1 API
+            page_data = self.confluence.create_page_v1(
+                space_key="MVT",
                 title=f"{story_key}: Design Doc",
-                body=content,
-                content_format="storage",
+                body_html=content,
             )
 
             if not page_data:
                 raise RuntimeError("Failed to create Confluence page")
 
-            page_url = f"{self.config.get('confluence_url')}/wiki/spaces/MVT/pages/{page_data['id']}"
+            page_url = f"{self.jira_base_url}/wiki/spaces/MVT/pages/{page_data['id']}"
 
             result = DocsResult(
                 status="success",
@@ -314,22 +392,17 @@ class DocsAgent:
             # Generate API docs using Claude
             content = await self._generate_api_docs_content(api_spec)
 
-            # Create Confluence page
-            space_id = self.confluence.get_space_id("MVT")
-            if not space_id:
-                raise RuntimeError("Could not find MVT space")
-
-            page_data = self.confluence.create_page(
-                space_id=space_id,
+            # Create Confluence page using v1 API
+            page_data = self.confluence.create_page_v1(
+                space_key="MVT",
                 title="API Documentation",
-                body=content,
-                content_format="storage",
+                body_html=content,
             )
 
             if not page_data:
                 raise RuntimeError("Failed to create Confluence page")
 
-            page_url = f"{self.config.get('confluence_url')}/wiki/spaces/MVT/pages/{page_data['id']}"
+            page_url = f"{self.jira_base_url}/wiki/spaces/MVT/pages/{page_data['id']}"
 
             result = DocsResult(
                 status="success",
@@ -379,22 +452,17 @@ class DocsAgent:
                 migration_guide,
             )
 
-            # Create Confluence page
-            space_id = self.confluence.get_space_id("MVT")
-            if not space_id:
-                raise RuntimeError("Could not find MVT space")
-
-            page_data = self.confluence.create_page(
-                space_id=space_id,
+            # Create Confluence page using v1 API
+            page_data = self.confluence.create_page_v1(
+                space_key="MVT",
                 title=f"Release Notes v{version}",
-                body=content,
-                content_format="storage",
+                body_html=content,
             )
 
             if not page_data:
                 raise RuntimeError("Failed to create Confluence page")
 
-            page_url = f"{self.config.get('confluence_url')}/wiki/spaces/MVT/pages/{page_data['id']}"
+            page_url = f"{self.jira_base_url}/wiki/spaces/MVT/pages/{page_data['id']}"
 
             result = DocsResult(
                 status="success",
@@ -435,25 +503,36 @@ class DocsAgent:
         results: Dict[str, Any],
     ) -> str:
         """Generate sprint report content using Claude."""
+        stories_text = chr(10).join(
+            f"- {s.get('key')}: {s.get('summary')} (Status: {s.get('status', 'Unknown')}, Points: {s.get('points', '-')})"
+            for s in stories
+        )
+
         prompt = f"""
-Generate a Confluence wiki markup formatted sprint report for:
+Generate a Confluence storage format sprint report for:
 Sprint: {sprint_id}
 Total Stories: {len(stories)}
 
 Stories:
-{chr(10).join(f"- {s.get('key')}: {s.get('summary')}" for s in stories)}
+{stories_text}
 
 Results:
 {json.dumps(results, indent=2)}
 
 Include:
-1. Executive summary
-2. Metrics (velocity, completion rate)
-3. Completed stories list
-4. Issues and blockers
+1. Executive summary (use <ac:structured-macro ac:name="panel"> for a highlighted summary panel)
+2. Metrics (velocity, completion rate) - format as a table using <table> tags
+3. Completed stories list (with status lozenges using <ac:structured-macro ac:name="status">)
+4. Issues and blockers (highlighted with an info panel)
 5. Next sprint recommendations
 
-Return only wiki markup, no markdown.
+Use Confluence Storage Format (XHTML) with:
+- <ac:structured-macro> tags for panels
+- <table> tags for metrics
+- <ac:structured-macro ac:name="status"> for status indicators
+- Proper XHTML formatting for lists and headings
+
+Return only Confluence storage format XHTML, no markdown or wiki markup.
 """
 
         try:
@@ -485,7 +564,7 @@ Return only wiki markup, no markdown.
         criteria = "\n".join(f"- {c}" for c in acceptance_criteria)
 
         prompt = f"""
-Generate a Confluence wiki markup formatted design document for:
+Generate a Confluence Storage Format design document for:
 Story: {story_key}
 Summary: {story_summary}
 
@@ -502,7 +581,13 @@ Include:
 7. Testing strategy
 8. Rollout plan
 
-Return only wiki markup, no markdown.
+Use Confluence Storage Format (XHTML) with:
+- <ac:structured-macro> tags for callouts and panels
+- <table> tags for structured data
+- Proper headings with h1, h2, h3
+- Lists using <ul> and <li>
+
+Return only Confluence storage format XHTML, no markdown or wiki markup.
 """
 
         try:
@@ -530,7 +615,7 @@ Return only wiki markup, no markdown.
     ) -> str:
         """Generate API documentation from OpenAPI spec."""
         prompt = f"""
-Generate a Confluence wiki markup formatted API documentation from this OpenAPI spec:
+Generate a Confluence Storage Format API documentation from this OpenAPI spec:
 
 {json.dumps(api_spec, indent=2)}
 
@@ -543,7 +628,13 @@ Include:
 6. Rate limits
 7. Code samples
 
-Return only wiki markup, no markdown.
+Use Confluence Storage Format (XHTML) with:
+- <ac:structured-macro> tags for code examples and callouts
+- <table> tags for endpoint listings
+- <pre> tags for code examples
+- Proper semantic XHTML structure
+
+Return only Confluence storage format XHTML, no markdown or wiki markup.
 """
 
         try:
@@ -580,7 +671,7 @@ Return only wiki markup, no markdown.
         breaking_text = "\n".join(f"- {bc}" for bc in breaking_changes)
 
         prompt = f"""
-Generate Confluence wiki markup formatted release notes for v{version}:
+Generate Confluence Storage Format release notes for v{version}:
 
 Features/Stories:
 {stories_text}
@@ -592,15 +683,21 @@ Migration Guide:
 {migration_guide}
 
 Include:
-1. Release highlights
+1. Release highlights (use <ac:structured-macro ac:name="panel"> for a banner)
 2. New features
 3. Bug fixes
-4. Breaking changes
+4. Breaking changes (highlighted with warning panel)
 5. Migration guide
 6. Known issues
 7. Upgrade instructions
 
-Return only wiki markup, no markdown.
+Use Confluence Storage Format (XHTML) with:
+- <ac:structured-macro> for highlight panels and warnings
+- Proper heading hierarchy (h1, h2, h3)
+- Lists for features and issues
+- Callout boxes for important information
+
+Return only Confluence storage format XHTML, no markdown or wiki markup.
 """
 
         try:
@@ -622,24 +719,91 @@ Return only wiki markup, no markdown.
             )
             raise
 
+    def _fetch_sprint_data_from_jira(self, sprint_id: str) -> Dict[str, Any]:
+        """Fetch sprint data and issues from JIRA REST API."""
+        try:
+            jira_config = self.config["jira"]
+            auth = (jira_config.email, jira_config.api_token)
+            headers = {"Content-Type": "application/json"}
+
+            # Get sprint info
+            sprint_url = f"{self.jira_base_url}/rest/api/3/sprints/{sprint_id}"
+            sprint_response = requests.get(sprint_url, auth=auth, headers=headers)
+            sprint_response.raise_for_status()
+            sprint_info = sprint_response.json()
+
+            # Query issues in the sprint
+            jql = f'sprint = {sprint_id} ORDER BY status DESC'
+            issues_url = f"{self.jira_base_url}/rest/api/3/search"
+            params = {
+                "jql": jql,
+                "maxResults": 100,
+                "fields": ["key", "summary", "status", "customfield_10016", "assignee"],
+            }
+
+            issues_response = requests.get(issues_url, auth=auth, headers=headers, params=params)
+            issues_response.raise_for_status()
+            issues_data = issues_response.json()
+
+            # Parse issues into structured format
+            stories = []
+            completed_count = 0
+            total_points = 0
+
+            for issue in issues_data.get("issues", []):
+                story = {
+                    "key": issue["key"],
+                    "summary": issue["fields"]["summary"],
+                    "status": issue["fields"]["status"]["name"],
+                    "points": issue["fields"].get("customfield_10016") or 0,  # Story points field
+                    "assignee": issue["fields"].get("assignee", {}).get("displayName", "Unassigned"),
+                }
+                stories.append(story)
+
+                if story["status"].lower() in ["done", "closed"]:
+                    completed_count += 1
+                total_points += story["points"] if story["points"] else 0
+
+            results = {
+                "sprint_name": sprint_info.get("name", f"Sprint {sprint_id}"),
+                "completed_stories": completed_count,
+                "total_stories": len(stories),
+                "total_points": total_points,
+                "completion_rate": round((completed_count / len(stories) * 100) if stories else 0, 1),
+            }
+
+            logger.info(
+                json.dumps({
+                    "action": "_fetch_sprint_data_from_jira",
+                    "sprint_id": sprint_id,
+                    "stories_count": len(stories),
+                })
+            )
+
+            return {
+                "stories": stories,
+                "results": results,
+            }
+
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "_fetch_sprint_data_from_jira",
+                    "sprint_id": sprint_id,
+                    "error": str(e),
+                })
+            )
+            return {"stories": [], "results": {}}
+
 
 async def main():
     """Main entry point for testing."""
     config = load_config()
-    config["confluence_url"] = "https://confluence.example.com"
-    config["confluence_email"] = "bot@example.com"
-    config["confluence_token"] = "token"
-
     agent = DocsAgent(config)
 
-    # Test sprint report
+    # Test sprint report - fetches data from real JIRA
     result = await agent.generate_sprint_report(
         sprint_id="1",
-        stories=[
-            {"key": "MVT-1", "summary": "Implement scanner"},
-            {"key": "MVT-2", "summary": "Add API endpoint"},
-        ],
-        results={"completed": 2, "failed": 0},
     )
 
     print(json.dumps(
@@ -647,6 +811,7 @@ async def main():
             "status": result.status,
             "page_id": result.page_id,
             "page_url": result.page_url,
+            "error": result.error,
         },
         indent=2,
     ))

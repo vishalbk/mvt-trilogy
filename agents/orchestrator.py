@@ -15,6 +15,7 @@ Architecture:
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -187,13 +188,21 @@ class JiraClient:
     def add_comment(self, issue_key: str, comment: str) -> bool:
         """Add comment to issue."""
         try:
-            url = f"{self.base_url}/rest/api/3/issue/{issue_key}/comments"
-            payload = {"body": {"content": [{"type": "paragraph", "content": []}]}}
-
-            # Parse comment to ADF format
-            payload["body"]["content"][0]["content"] = [
-                {"type": "text", "text": comment}
-            ]
+            url = f"{self.base_url}/rest/api/3/issue/{issue_key}/comment"
+            payload = {
+                "body": {
+                    "type": "doc",
+                    "version": 1,
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {"type": "text", "text": comment}
+                            ]
+                        }
+                    ]
+                }
+            }
 
             self._request("POST", url, json=payload)
             return True
@@ -226,7 +235,7 @@ class JiraClient:
                             "retry_in": wait_time,
                         })
                     )
-                    asyncio.run(asyncio.sleep(wait_time))
+                    time.sleep(wait_time)
                 else:
                     raise
             except requests.exceptions.HTTPError as e:
@@ -240,7 +249,7 @@ class JiraClient:
                                 "retry_in": wait_time,
                             })
                         )
-                        asyncio.run(asyncio.sleep(wait_time))
+                        time.sleep(wait_time)
                     else:
                         raise
                 else:
@@ -342,7 +351,7 @@ class TelegramClient:
             payload = {
                 "chat_id": self.chat_id,
                 "text": text,
-                "parse_mode": "Markdown",
+                "parse_mode": "HTML",
             }
             if reply_markup:
                 payload["reply_markup"] = reply_markup
@@ -374,10 +383,10 @@ class TelegramClient:
         """Send approval request with inline buttons."""
         try:
             story_text = "\n".join(
-                [f"• *{s.key}*: {s.summary}" for s in stories]
+                [f"• <b>{s.key}</b>: {s.summary}" for s in stories]
             )
             text = (
-                f"*Sprint Approval Required*\n\n"
+                f"<b>Sprint Approval Required</b>\n\n"
                 f"Stories ready for approval:\n{story_text}\n\n"
                 f"Review and approve to proceed to production."
             )
@@ -593,7 +602,7 @@ class SprintOrchestrator:
         return processed_results
 
     async def execute_story(self, story: Story) -> ExecutionResult:
-        """Execute story through full lifecycle."""
+        """Execute story through full lifecycle using real subagents."""
         start_time = datetime.now()
         agent_type = self.assign_to_agent(story)
 
@@ -605,9 +614,59 @@ class SprintOrchestrator:
                 f"Starting execution with {agent_type} agent",
             )
 
-            # Execute via Claude
-            prompt = self._build_execution_prompt(story, agent_type)
-            result = await self._call_claude_agent(prompt, agent_type)
+            # Dispatch to real subagent
+            story_dict = {
+                "key": story.key,
+                "summary": story.summary,
+                "description": story.description,
+                "component": story.component,
+                "labels": story.labels,
+                "acceptance_criteria": story.acceptance_criteria,
+            }
+
+            result = {}
+            if agent_type == "code":
+                from subagents.code_agent import CodeAgent
+                agent = CodeAgent(self.config)
+                code_result = await agent.execute(story_dict)
+                result = {
+                    "status": code_result.status,
+                    "pr_url": code_result.pr_url,
+                    "branch": code_result.branch,
+                    "files_changed": code_result.files_changed,
+                }
+            elif agent_type == "test":
+                from subagents.test_agent import TestAgent
+                agent = TestAgent(self.config)
+                test_result = await agent.execute(story.key, ".")
+                result = {
+                    "status": test_result.status,
+                    "passed": test_result.passed,
+                    "failed": test_result.failed,
+                    "coverage": test_result.coverage_percent,
+                }
+            elif agent_type == "deploy":
+                from subagents.deploy_agent import DeployAgent
+                agent = DeployAgent(self.config)
+                deploy_result = await agent.execute(pr_number=0)
+                result = {
+                    "status": deploy_result.status,
+                    "staging_url": deploy_result.staging_url,
+                }
+            elif agent_type == "docs":
+                from subagents.docs_agent import DocsAgent
+                agent = DocsAgent(self.config)
+                docs_result = await agent.generate_design_doc(
+                    story.key, story.summary, story.acceptance_criteria
+                )
+                result = {
+                    "status": docs_result.status,
+                    "page_url": docs_result.page_url,
+                }
+            else:
+                # Fallback to Claude for unknown agent types
+                prompt = self._build_execution_prompt(story, agent_type)
+                result = await self._call_claude_agent(prompt, agent_type)
 
             # Transition to IN_TEST
             self.jira.transition_issue(
@@ -764,10 +823,19 @@ Be thorough and ensure all acceptance criteria are met.
     async def generate_sprint_report(self, sprint_id: str) -> str:
         """Generate sprint report and post to Confluence."""
         try:
-            report = self._build_sprint_report(sprint_id)
+            from subagents.docs_agent import DocsAgent
+            docs_agent = DocsAgent(self.config)
+            stories_data = [
+                {"key": s.key, "summary": s.summary, "status": s.status}
+                for s in self.stories.values()
+            ]
+            results_data = {
+                key: {"status": r.status, "duration": r.duration, "agent": r.agent_type}
+                for key, r in self.execution_results.items()
+            }
+            report = await docs_agent.generate_sprint_report(sprint_id, stories_data, results_data)
 
-            # Post to Confluence (mock)
-            confluence_url = f"https://confluence.example.com/spaces/MVT/pages/{sprint_id}"
+            confluence_url = report.page_url if report.status == "success" else ""
 
             logger.info(
                 json.dumps({
@@ -884,7 +952,7 @@ Be thorough and ensure all acceptance criteria are met.
             report_url = await self.generate_sprint_report(sprint_id)
 
             self.telegram.send_message(
-                f"*Sprint {sprint_id} Complete*\n\n"
+                f"<b>Sprint {sprint_id} Complete</b>\n\n"
                 f"✅ All stories deployed to production\n"
                 f"📊 Report: {report_url}"
             )

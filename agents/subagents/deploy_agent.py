@@ -19,11 +19,18 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 
 from config import load_config
+
+# Try to import boto3, but don't fail if it's not available
+try:
+    import boto3
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
 
 
 # Configure structured logging
@@ -194,6 +201,26 @@ class CloudWatchClient:
     def __init__(self, region: str = "us-east-1"):
         """Initialize CloudWatch client."""
         self.region = region
+        self.client = None
+
+        if BOTO3_AVAILABLE:
+            try:
+                self.client = boto3.client("cloudwatch", region_name=region)
+                logger.info(
+                    json.dumps({
+                        "action": "CloudWatchClient.__init__",
+                        "status": "initialized",
+                        "region": region,
+                    })
+                )
+            except Exception as e:
+                logger.warning(
+                    json.dumps({
+                        "action": "CloudWatchClient.__init__",
+                        "warning": "Failed to initialize boto3 CloudWatch client",
+                        "error": str(e),
+                    })
+                )
 
     def get_metrics(
         self,
@@ -202,6 +229,9 @@ class CloudWatchClient:
         duration_minutes: int = 5,
     ) -> Dict[str, float]:
         """Get CloudWatch metrics for monitoring.
+
+        Queries real CloudWatch metrics using boto3. Falls back to mock data
+        if boto3 is unavailable or credentials are missing.
 
         Args:
             namespace: CloudWatch namespace (e.g., AWS/Lambda)
@@ -212,23 +242,192 @@ class CloudWatchClient:
             Dict with error_rate, latency_p99, invocations, throttles
         """
         try:
-            # In production, would use boto3 to query CloudWatch
-            # For now, return sample structure
-            import random
-            return {
-                "error_rate": random.uniform(0, 2),
-                "latency_p99": random.uniform(100, 500),
-                "invocations": random.randint(100, 1000),
-                "throttles": random.randint(0, 5),
-            }
+            if not self.client:
+                logger.warning(
+                    json.dumps({
+                        "action": "get_metrics",
+                        "warning": "CloudWatch client not available, using mock data",
+                    })
+                )
+                return self._get_mock_metrics()
+
+            return self._query_real_metrics(
+                namespace=namespace,
+                metric_name=metric_name,
+                duration_minutes=duration_minutes,
+            )
+
         except Exception as e:
             logger.error(
                 json.dumps({
                     "action": "get_metrics",
                     "error": str(e),
+                    "fallback": "returning_mock_data",
                 })
             )
-            return {}
+            return self._get_mock_metrics()
+
+    def _query_real_metrics(
+        self,
+        namespace: str,
+        metric_name: str,
+        duration_minutes: int,
+    ) -> Dict[str, float]:
+        """Query real metrics from CloudWatch API.
+
+        Args:
+            namespace: CloudWatch namespace
+            metric_name: Metric name to query
+            duration_minutes: Look back period
+
+        Returns:
+            Dict with calculated metrics
+        """
+        try:
+            end_time = datetime.utcnow()
+            start_time = end_time - timedelta(minutes=duration_minutes)
+
+            metrics_data = {
+                "error_rate": 0.0,
+                "latency_p99": 0.0,
+                "invocations": 0,
+                "throttles": 0,
+            }
+
+            # Query Errors metric
+            try:
+                errors = self.client.get_metric_statistics(
+                    Namespace=namespace,
+                    MetricName="Errors",
+                    StartTime=start_time,
+                    EndTime=end_time,
+                    Period=60,
+                    Statistics=["Sum"],
+                )
+                error_sum = sum(
+                    dp.get("Sum", 0) for dp in errors.get("Datapoints", [])
+                )
+                metrics_data["error_count"] = int(error_sum)
+            except Exception as e:
+                logger.warning(
+                    json.dumps({
+                        "action": "_query_real_metrics",
+                        "metric": "Errors",
+                        "error": str(e),
+                    })
+                )
+
+            # Query Invocations metric
+            try:
+                invocations = self.client.get_metric_statistics(
+                    Namespace=namespace,
+                    MetricName="Invocations",
+                    StartTime=start_time,
+                    EndTime=end_time,
+                    Period=60,
+                    Statistics=["Sum"],
+                )
+                invocation_sum = sum(
+                    dp.get("Sum", 0) for dp in invocations.get("Datapoints", [])
+                )
+                metrics_data["invocations"] = int(invocation_sum)
+
+                # Calculate error rate
+                if metrics_data["invocations"] > 0:
+                    metrics_data["error_rate"] = (
+                        metrics_data.get("error_count", 0) / metrics_data["invocations"] * 100
+                    )
+            except Exception as e:
+                logger.warning(
+                    json.dumps({
+                        "action": "_query_real_metrics",
+                        "metric": "Invocations",
+                        "error": str(e),
+                    })
+                )
+
+            # Query Duration metric for p99 latency
+            try:
+                duration = self.client.get_metric_statistics(
+                    Namespace=namespace,
+                    MetricName="Duration",
+                    StartTime=start_time,
+                    EndTime=end_time,
+                    Period=60,
+                    ExtendedStatistics=["p99"],
+                )
+                durations = [
+                    dp.get("ExtendedStatistics", {}).get("p99", 0)
+                    for dp in duration.get("Datapoints", [])
+                ]
+                metrics_data["latency_p99"] = max(durations) if durations else 0.0
+            except Exception as e:
+                logger.warning(
+                    json.dumps({
+                        "action": "_query_real_metrics",
+                        "metric": "Duration",
+                        "error": str(e),
+                    })
+                )
+
+            # Query Throttles metric
+            try:
+                throttles = self.client.get_metric_statistics(
+                    Namespace=namespace,
+                    MetricName="Throttles",
+                    StartTime=start_time,
+                    EndTime=end_time,
+                    Period=60,
+                    Statistics=["Sum"],
+                )
+                throttle_sum = sum(
+                    dp.get("Sum", 0) for dp in throttles.get("Datapoints", [])
+                )
+                metrics_data["throttles"] = int(throttle_sum)
+            except Exception as e:
+                logger.warning(
+                    json.dumps({
+                        "action": "_query_real_metrics",
+                        "metric": "Throttles",
+                        "error": str(e),
+                    })
+                )
+
+            logger.info(
+                json.dumps({
+                    "action": "_query_real_metrics",
+                    "status": "success",
+                    "error_rate": metrics_data["error_rate"],
+                    "latency_p99": metrics_data["latency_p99"],
+                    "throttles": metrics_data["throttles"],
+                })
+            )
+
+            return metrics_data
+
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "_query_real_metrics",
+                    "error": str(e),
+                })
+            )
+            return self._get_mock_metrics()
+
+    @staticmethod
+    def _get_mock_metrics() -> Dict[str, float]:
+        """Return mock metrics for development/testing.
+
+        Returns:
+            Dict with mock metric values
+        """
+        import random
+        return {
+            "error_rate": random.uniform(0, 1),
+            "latency_p99": random.uniform(100, 500),
+            "invocations": random.randint(100, 1000),
+            "throttles": random.randint(0, 2),
+        }
 
 
 class DeployAgent:
@@ -242,7 +441,9 @@ class DeployAgent:
             config["github"].org,
             config["github"].repo,
         )
-        self.cloudwatch = CloudWatchClient()
+        # Initialize CloudWatch with AWS region from config or default
+        region = config.get("aws_region", "us-east-1")
+        self.cloudwatch = CloudWatchClient(region=region)
 
     async def execute(
         self,

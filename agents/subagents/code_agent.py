@@ -192,6 +192,78 @@ class GithubCodeClient:
             )
             return []
 
+    def update_existing_file(
+        self,
+        branch: str,
+        file_path: str,
+        content: str,
+        message: str,
+    ) -> bool:
+        """Update existing file in repository (gets SHA before updating).
+
+        GitHub API requires the current file SHA for updates to prevent
+        concurrent modification conflicts.
+
+        Args:
+            branch: Branch to update on
+            file_path: Path to file to update
+            content: New file content
+            message: Commit message
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            url = f"{self.base_url}/repos/{self.org}/{self.repo}/contents/{file_path}"
+
+            # First, get the current file SHA
+            get_response = self.session.get(url, params={"ref": branch})
+            get_response.raise_for_status()
+            current_sha = get_response.json().get("sha")
+
+            if not current_sha:
+                logger.error(
+                    json.dumps({
+                        "action": "update_existing_file",
+                        "error": "Could not retrieve file SHA",
+                        "path": file_path,
+                    })
+                )
+                return False
+
+            # Encode content as base64
+            import base64
+            encoded_content = base64.b64encode(content.encode()).decode()
+
+            # Update with SHA
+            payload = {
+                "message": message,
+                "content": encoded_content,
+                "sha": current_sha,
+                "branch": branch,
+            }
+
+            response = self.session.put(url, json=payload)
+            response.raise_for_status()
+
+            logger.info(
+                json.dumps({
+                    "action": "update_existing_file",
+                    "path": file_path,
+                    "branch": branch,
+                })
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                json.dumps({
+                    "action": "update_existing_file",
+                    "path": file_path,
+                    "error": str(e),
+                })
+            )
+            return False
+
 
 class CodeAgent:
     """Specialized agent for writing implementation code."""
@@ -477,6 +549,22 @@ Repeat for each file needed. Generate all necessary files for a complete impleme
                         if "unknown_package" in line:
                             errors.append(f"Unknown import in {file_path}: {line}")
 
+            # Check for DynamoDB float() usage - MVT requires Decimal type
+            if file_path.endswith(".py") and "dynamodb" in file_path.lower():
+                if "float(" in content:
+                    errors.append(
+                        f"DynamoDB code in {file_path}: Use Decimal() instead of float() "
+                        "(MVT requirement for DynamoDB decimal precision)"
+                    )
+                if "from decimal import Decimal" not in content and "Decimal(" in content:
+                    logger.warning(
+                        json.dumps({
+                            "action": "_validate_code",
+                            "warning": "Decimal used without import",
+                            "file": file_path,
+                        })
+                    )
+
         logger.info(
             json.dumps({
                 "action": "_validate_code",
@@ -520,16 +608,26 @@ Closes #{story.get('key')}
         """Get repository context for code generation."""
         try:
             structure = self.github.get_repo_structure()
+
+            # Filter structure to meaningful items (exclude dotfiles, common unneeded dirs)
+            filtered_structure = [
+                {"name": item.get("name"), "type": item.get("type")}
+                for item in structure
+                if isinstance(item, dict)
+                and item.get("name") not in [".git", ".github", "__pycache__", "node_modules"]
+                and not item.get("name", "").startswith(".")
+            ][:20]
+
             return {
-                "structure": [
-                    {"name": item.get("name"), "type": item.get("type")}
-                    for item in structure[:20]  # Limit output
-                ],
+                "structure": filtered_structure,
                 "patterns": [
                     "Use async/await for I/O operations",
                     "Follow Black code style for Python",
                     "Use TypeScript for frontend code",
                     "Include type hints on all functions",
+                    "For DynamoDB: Use Decimal type instead of float",
+                    "For Lambda: Include proper error handling and logging",
+                    "For React: Use functional components with hooks",
                 ],
             }
         except Exception as e:
@@ -539,7 +637,15 @@ Closes #{story.get('key')}
                     "error": str(e),
                 })
             )
-            return {"structure": [], "patterns": []}
+            return {
+                "structure": [],
+                "patterns": [
+                    "Use async/await for I/O operations",
+                    "Follow Black code style for Python",
+                    "Use TypeScript for frontend code",
+                    "Include type hints on all functions",
+                ]
+            }
 
     def _create_branch_name(self, story: Dict[str, Any]) -> str:
         """Create feature branch name from story."""
