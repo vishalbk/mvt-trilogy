@@ -46,7 +46,7 @@ def get_sovereign_indicators() -> dict:
         )
 
         for item in response.get('Items', []):
-            sort_key = item.get('sort_key', '')
+            sort_key = item.get('signalId_timestamp', '')
 
             # Extract country from sort key
             parts = sort_key.split('#')
