@@ -145,7 +145,7 @@ resource "google_bigquery_routine" "daily_correlation" {
   project      = var.project_id
   dataset_id   = google_bigquery_dataset.mvt_analytics.dataset_id
   routine_id   = "daily_correlation"
-  routine_type = "QUERY"
+  routine_type = "SCALAR_FUNCTION"
   language     = "SQL"
 
   definition_body = file("${path.module}/queries/daily_correlation.sql")
