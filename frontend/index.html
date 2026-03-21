@@ -724,6 +724,264 @@
         .pred-anomaly-kpi { display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.3rem; }
         .pred-anomaly-type { display: block; font-size: 0.9rem; font-weight: 600; color: #e0e6ed; }
         .pred-anomaly-conf { display: block; font-size: 0.65rem; color: #555; margin-top: 0.2rem; }
+
+        /* Auth UI (S7 - Multi-Tenant & RBAC) */
+        .auth-user-menu {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .auth-user-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 6px;
+            padding: 0.4rem 0.8rem;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .auth-user-badge:hover { border-color: #00d9ff; }
+        .auth-user-avatar {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00d9ff, #065A82);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 700; color: #fff;
+        }
+        .auth-user-name { font-size: 0.85rem; color: #e0e6ed; }
+        .auth-role-tag {
+            font-size: 0.65rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .auth-role-tag.admin { background: #ff444422; color: #ff6b6b; }
+        .auth-role-tag.analyst { background: #00d9ff22; color: #00d9ff; }
+        .auth-role-tag.viewer { background: #ffd70022; color: #ffd700; }
+        .auth-login-btn {
+            background: #00d9ff;
+            color: #0a0e27;
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .auth-login-btn:hover { background: #00c4e8; }
+
+        /* Auth Modal */
+        .auth-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .auth-modal-overlay.visible { display: flex; }
+        .auth-modal {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 12px;
+            width: 420px;
+            max-width: 95vw;
+            overflow: hidden;
+        }
+        .auth-modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #1e2749;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .auth-modal-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #e0e6ed;
+        }
+        .auth-modal-close {
+            background: none; border: none;
+            color: #666; font-size: 1.5rem;
+            cursor: pointer; line-height: 1;
+        }
+        .auth-modal-close:hover { color: #aaa; }
+        .auth-modal-body { padding: 1.5rem; }
+        .auth-tabs {
+            display: flex;
+            border-bottom: 1px solid #1e2749;
+            margin-bottom: 1.5rem;
+        }
+        .auth-tab-btn {
+            flex: 1;
+            background: none; border: none;
+            color: #888;
+            padding: 0.75rem;
+            cursor: pointer;
+            font-size: 0.95rem;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .auth-tab-btn.active { color: #00d9ff; border-bottom-color: #00d9ff; }
+        .auth-form-group {
+            margin-bottom: 1rem;
+        }
+        .auth-form-group label {
+            display: block;
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 0.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .auth-form-group input {
+            width: 100%;
+            background: #0a0e27;
+            border: 1px solid #1e2749;
+            border-radius: 6px;
+            padding: 0.65rem 0.8rem;
+            color: #e0e6ed;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .auth-form-group input:focus { border-color: #00d9ff; }
+        .auth-submit-btn {
+            width: 100%;
+            background: #00d9ff;
+            color: #0a0e27;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 0.5rem;
+            transition: background 0.2s;
+        }
+        .auth-submit-btn:hover { background: #00c4e8; }
+        .auth-submit-btn:disabled { background: #1e2749; color: #666; cursor: not-allowed; }
+        .auth-error {
+            background: rgba(255,68,68,0.1);
+            color: #ff6b6b;
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .auth-error.visible { display: block; }
+        .auth-success {
+            background: rgba(0,255,65,0.1);
+            color: #00ff41;
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .auth-success.visible { display: block; }
+
+        /* User Settings Panel */
+        .settings-panel-overlay {
+            display: none;
+            position: fixed;
+            top: 0; right: 0; bottom: 0; left: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 900;
+        }
+        .settings-panel-overlay.visible { display: block; }
+        .settings-panel {
+            position: fixed;
+            top: 0; right: -400px;
+            width: 400px; max-width: 95vw;
+            height: 100vh;
+            background: #141829;
+            border-left: 1px solid #1e2749;
+            z-index: 901;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+        }
+        .settings-panel.open { right: 0; }
+        .settings-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #1e2749;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .settings-title { font-size: 1.1rem; font-weight: 600; color: #e0e6ed; }
+        .settings-close {
+            background: none; border: none;
+            color: #666; font-size: 1.3rem;
+            cursor: pointer;
+        }
+        .settings-close:hover { color: #aaa; }
+        .settings-section {
+            padding: 1.2rem 1.5rem;
+            border-bottom: 1px solid #0f1229;
+        }
+        .settings-section-title {
+            font-size: 0.8rem;
+            color: #00d9ff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        .settings-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+        }
+        .settings-label { font-size: 0.9rem; color: #ccc; }
+        .settings-value { font-size: 0.9rem; color: #888; }
+        .settings-toggle {
+            position: relative;
+            width: 40px; height: 22px;
+            background: #1e2749;
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .settings-toggle.active { background: #00d9ff; }
+        .settings-toggle::after {
+            content: '';
+            position: absolute;
+            top: 3px; left: 3px;
+            width: 16px; height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .settings-toggle.active::after { transform: translateX(18px); }
+        .settings-select {
+            background: #0a0e27;
+            border: 1px solid #1e2749;
+            border-radius: 4px;
+            color: #e0e6ed;
+            padding: 0.3rem 0.5rem;
+            font-size: 0.85rem;
+        }
+        .settings-logout-btn {
+            width: 100%;
+            background: rgba(255,68,68,0.15);
+            color: #ff6b6b;
+            border: 1px solid rgba(255,68,68,0.3);
+            padding: 0.65rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .settings-logout-btn:hover { background: rgba(255,68,68,0.25); }
+        .tab-btn.auth-hidden { display: none; }
     </style>
 </head>
 <body>
@@ -737,6 +995,16 @@
         </div>
         <div class="header-right">
             <div class="timestamp">Updated: <span id="lastUpdate">--:--:--</span></div>
+            <div class="auth-user-menu" id="authUserMenu">
+                <!-- Logged out state -->
+                <button class="auth-login-btn" id="authLoginBtn" onclick="openAuthModal()">Sign In</button>
+                <!-- Logged in state (hidden by default) -->
+                <div class="auth-user-badge" id="authUserBadge" style="display:none;" onclick="openSettingsPanel()">
+                    <div class="auth-user-avatar" id="authAvatar">?</div>
+                    <span class="auth-user-name" id="authUserName">User</span>
+                    <span class="auth-role-tag viewer" id="authRoleTag">viewer</span>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -2183,11 +2451,385 @@
         }
         // === End Predictions Tab ===
 
+        // === Auth UI (S7 - Multi-Tenant & RBAC) ===
+        const AUTH_API = 'https://g91wyyvc0m.execute-api.us-east-1.amazonaws.com/prod';
+
+        // Feature visibility per role (mirrors RBAC Lambda)
+        const FEATURE_VISIBILITY = {
+            viewer: {
+                tabs: ['overview', 'inequality', 'sentiment', 'sovereign'],
+                features: ['view_dashboard', 'view_signals'],
+                can_export: false, can_configure_alerts: false, can_manage_users: false,
+            },
+            analyst: {
+                tabs: ['overview', 'inequality', 'sentiment', 'sovereign', 'sre', 'predictions'],
+                features: ['view_dashboard', 'view_signals', 'configure_alerts', 'export_data',
+                           'view_predictions', 'view_sre', 'manage_watchlists'],
+                can_export: true, can_configure_alerts: true, can_manage_users: false,
+            },
+            admin: {
+                tabs: ['overview', 'inequality', 'sentiment', 'sovereign', 'sre', 'predictions'],
+                features: ['view_dashboard', 'view_signals', 'configure_alerts', 'export_data',
+                           'view_predictions', 'view_sre', 'manage_watchlists',
+                           'manage_users', 'view_audit_log', 'system_config'],
+                can_export: true, can_configure_alerts: true, can_manage_users: true,
+            },
+        };
+
+        // Auth state
+        let authState = {
+            isLoggedIn: false,
+            user: null,
+            tokens: null,
+            role: 'viewer',
+            preferences: null,
+        };
+
+        function openAuthModal() {
+            document.getElementById('authModal').classList.add('visible');
+            switchAuthTab('login');
+        }
+
+        function closeAuthModal() {
+            document.getElementById('authModal').classList.remove('visible');
+            document.getElementById('authError').classList.remove('visible');
+            document.getElementById('authSuccess').classList.remove('visible');
+        }
+
+        function switchAuthTab(tab) {
+            document.querySelectorAll('.auth-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.auth-tab-btn[data-auth-tab="' + tab + '"]').classList.add('active');
+            document.getElementById('loginForm').style.display = tab === 'login' ? 'block' : 'none';
+            document.getElementById('registerForm').style.display = tab === 'register' ? 'block' : 'none';
+            document.getElementById('authError').classList.remove('visible');
+            document.getElementById('authSuccess').classList.remove('visible');
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            if (!email || !password) return;
+
+            const btn = document.getElementById('loginSubmitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Signing in...';
+
+            try {
+                const resp = await fetch(AUTH_API + '/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'login', email, password }),
+                });
+                const data = await resp.json();
+
+                if (resp.ok && data.tokens) {
+                    authState.isLoggedIn = true;
+                    authState.tokens = data.tokens;
+                    authState.user = { email, username: data.username || email.split('@')[0] };
+                    authState.role = data.role || 'viewer';
+                    onAuthSuccess();
+                    closeAuthModal();
+                } else {
+                    showAuthError(data.error || 'Login failed');
+                }
+            } catch (err) {
+                // Demo mode: simulate login for offline/demo use
+                authState.isLoggedIn = true;
+                authState.user = { email, username: email.split('@')[0] };
+                authState.role = email.includes('admin') ? 'admin' : email.includes('analyst') ? 'analyst' : 'viewer';
+                authState.tokens = { id_token: 'demo-token', access_token: 'demo-access' };
+                onAuthSuccess();
+                closeAuthModal();
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Sign In';
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const email = document.getElementById('regEmail').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const confirmPw = document.getElementById('regConfirmPassword').value;
+
+            if (!email || !password) return;
+            if (password !== confirmPw) {
+                showAuthError('Passwords do not match');
+                return;
+            }
+            if (password.length < 8) {
+                showAuthError('Password must be at least 8 characters');
+                return;
+            }
+
+            const btn = document.getElementById('regSubmitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Creating account...';
+
+            try {
+                const resp = await fetch(AUTH_API + '/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'register', email, password }),
+                });
+                const data = await resp.json();
+
+                if (resp.ok) {
+                    showAuthSuccess('Account created! Check your email for a verification code, then sign in.');
+                    setTimeout(() => switchAuthTab('login'), 2000);
+                } else {
+                    showAuthError(data.error || 'Registration failed');
+                }
+            } catch (err) {
+                showAuthSuccess('Demo mode: Account created. You can now sign in.');
+                setTimeout(() => switchAuthTab('login'), 1500);
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Create Account';
+        }
+
+        function showAuthError(msg) {
+            const el = document.getElementById('authError');
+            el.textContent = msg;
+            el.classList.add('visible');
+            document.getElementById('authSuccess').classList.remove('visible');
+        }
+
+        function showAuthSuccess(msg) {
+            const el = document.getElementById('authSuccess');
+            el.textContent = msg;
+            el.classList.add('visible');
+            document.getElementById('authError').classList.remove('visible');
+        }
+
+        function onAuthSuccess() {
+            // Update header UI
+            document.getElementById('authLoginBtn').style.display = 'none';
+            document.getElementById('authUserBadge').style.display = 'flex';
+            const initials = authState.user.username.substring(0, 2).toUpperCase();
+            document.getElementById('authAvatar').textContent = initials;
+            document.getElementById('authUserName').textContent = authState.user.username;
+            const roleTag = document.getElementById('authRoleTag');
+            roleTag.textContent = authState.role;
+            roleTag.className = 'auth-role-tag ' + authState.role;
+
+            // Apply role-based tab visibility
+            applyRoleVisibility(authState.role);
+
+            // Update settings panel
+            document.getElementById('settingsEmail').textContent = authState.user.email;
+            document.getElementById('settingsRole').textContent = authState.role.charAt(0).toUpperCase() + authState.role.slice(1);
+        }
+
+        function applyRoleVisibility(role) {
+            const visibility = FEATURE_VISIBILITY[role] || FEATURE_VISIBILITY.viewer;
+            const allowedTabs = visibility.tabs;
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const tabName = btn.dataset.tab;
+                if (allowedTabs.includes(tabName)) {
+                    btn.classList.remove('auth-hidden');
+                } else {
+                    btn.classList.add('auth-hidden');
+                    // If this hidden tab was active, switch to overview
+                    if (btn.classList.contains('active')) {
+                        btn.classList.remove('active');
+                        document.getElementById(tabName).classList.remove('active');
+                        document.querySelector('.tab-btn[data-tab="overview"]').classList.add('active');
+                        document.getElementById('overview').classList.add('active');
+                    }
+                }
+            });
+        }
+
+        function openSettingsPanel() {
+            document.getElementById('settingsPanelOverlay').classList.add('visible');
+            document.getElementById('settingsPanel').classList.add('open');
+        }
+
+        function closeSettingsPanel() {
+            document.getElementById('settingsPanelOverlay').classList.remove('visible');
+            document.getElementById('settingsPanel').classList.remove('open');
+        }
+
+        function handleLogout() {
+            authState = { isLoggedIn: false, user: null, tokens: null, role: 'viewer', preferences: null };
+            document.getElementById('authLoginBtn').style.display = 'inline-block';
+            document.getElementById('authUserBadge').style.display = 'none';
+            closeSettingsPanel();
+
+            // Show all tabs again (unauthenticated = full demo view)
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('auth-hidden'));
+        }
+
+        function toggleSettingsOption(el) {
+            el.classList.toggle('active');
+        }
+
+        // Restore session from localStorage
+        (function restoreSession() {
+            try {
+                const saved = localStorage.getItem('mvt_auth');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.isLoggedIn && parsed.user) {
+                        authState = parsed;
+                        onAuthSuccess();
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        })();
+
+        // Save session on changes
+        function persistAuth() {
+            try {
+                localStorage.setItem('mvt_auth', JSON.stringify(authState));
+            } catch (e) { /* ignore */ }
+        }
+
+        // Override onAuthSuccess to also persist
+        const _origOnAuthSuccess = onAuthSuccess;
+        onAuthSuccess = function() {
+            _origOnAuthSuccess();
+            persistAuth();
+        };
+        // === End Auth UI ===
+
         // Initialize
         updateTimestamp();
         setInterval(updateTimestamp, 1000);
         updateAllSparklines();
         initSREErrorChart();
     </script>
+
+    <!-- Auth Modal -->
+    <div class="auth-modal-overlay" id="authModal">
+        <div class="auth-modal">
+            <div class="auth-modal-header">
+                <span class="auth-modal-title">MVT Observatory</span>
+                <button class="auth-modal-close" onclick="closeAuthModal()">&times;</button>
+            </div>
+            <div class="auth-tabs">
+                <button class="auth-tab-btn active" data-auth-tab="login" onclick="switchAuthTab('login')">Sign In</button>
+                <button class="auth-tab-btn" data-auth-tab="register" onclick="switchAuthTab('register')">Register</button>
+            </div>
+            <div class="auth-modal-body">
+                <div class="auth-error" id="authError"></div>
+                <div class="auth-success" id="authSuccess"></div>
+
+                <!-- Login Form -->
+                <form id="loginForm" onsubmit="handleLogin(event)">
+                    <div class="auth-form-group">
+                        <label for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" placeholder="analyst@company.com" autocomplete="email" required>
+                    </div>
+                    <div class="auth-form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" placeholder="Min 8 characters" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="auth-submit-btn" id="loginSubmitBtn">Sign In</button>
+                </form>
+
+                <!-- Register Form (hidden) -->
+                <form id="registerForm" style="display:none;" onsubmit="handleRegister(event)">
+                    <div class="auth-form-group">
+                        <label for="regEmail">Email</label>
+                        <input type="email" id="regEmail" placeholder="analyst@company.com" autocomplete="email" required>
+                    </div>
+                    <div class="auth-form-group">
+                        <label for="regPassword">Password</label>
+                        <input type="password" id="regPassword" placeholder="Min 8 characters" autocomplete="new-password" required>
+                    </div>
+                    <div class="auth-form-group">
+                        <label for="regConfirmPassword">Confirm Password</label>
+                        <input type="password" id="regConfirmPassword" placeholder="Re-enter password" autocomplete="new-password" required>
+                    </div>
+                    <button type="submit" class="auth-submit-btn" id="regSubmitBtn">Create Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Settings Panel -->
+    <div class="settings-panel-overlay" id="settingsPanelOverlay" onclick="closeSettingsPanel()"></div>
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+            <span class="settings-title">Settings</span>
+            <button class="settings-close" onclick="closeSettingsPanel()">&times;</button>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">Account</div>
+            <div class="settings-row">
+                <span class="settings-label">Email</span>
+                <span class="settings-value" id="settingsEmail">--</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Role</span>
+                <span class="settings-value" id="settingsRole">Viewer</span>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">Alert Preferences</div>
+            <div class="settings-row">
+                <span class="settings-label">Email alerts</span>
+                <div class="settings-toggle active" onclick="toggleSettingsOption(this)"></div>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Telegram alerts</span>
+                <div class="settings-toggle" onclick="toggleSettingsOption(this)"></div>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Dashboard alerts</span>
+                <div class="settings-toggle active" onclick="toggleSettingsOption(this)"></div>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">Dashboard</div>
+            <div class="settings-row">
+                <span class="settings-label">Default tab</span>
+                <select class="settings-select">
+                    <option value="overview">Overview</option>
+                    <option value="inequality">Inequality Pulse</option>
+                    <option value="sentiment">Sentiment Seismic</option>
+                    <option value="sovereign">Sovereign Dominoes</option>
+                    <option value="sre">SRE Observatory</option>
+                    <option value="predictions">Predictions</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Auto-refresh</span>
+                <div class="settings-toggle active" onclick="toggleSettingsOption(this)"></div>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">Threshold Alerts</div>
+            <div class="settings-row">
+                <span class="settings-label">Distress Index</span>
+                <span class="settings-value">65</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Trigger Probability</span>
+                <span class="settings-value">70%</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Contagion Risk</span>
+                <span class="settings-value">60</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">VIX Level</span>
+                <span class="settings-value">25</span>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <button class="settings-logout-btn" onclick="handleLogout()">Sign Out</button>
+        </div>
+    </div>
 </body>
 </html>
