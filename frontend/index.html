@@ -2158,18 +2158,32 @@
         function updateCountryRisks(data) {
             if (!data.countries) return;
             state.countryData = data.countries; // EV5: Store for export/drilldown
+            const cnames = {
+                'ARG': 'Argentina', 'BRA': 'Brazil', 'TUR': 'Turkey',
+                'EGY': 'Egypt', 'PAK': 'Pakistan', 'NGA': 'Nigeria',
+                'ZAF': 'South Africa', 'MEX': 'Mexico', 'IDN': 'Indonesia', 'IND': 'India'
+            };
             const container = document.getElementById('countryRiskList');
             container.innerHTML = data.countries.map(country => {
                 const riskClass = country.risk_score > 70 ? 'high' : country.risk_score > 40 ? 'medium' : 'low';
+                const displayName = cnames[country.name] || country.name;
                 return `
-                    <div class="country-row" onclick="openCountryDrilldown('${country.name}')">
-                        <div class="country-name">${country.name}</div>
+                    <div class="country-row" data-country-code="${country.name}" style="cursor:pointer;">
+                        <div class="country-name">${displayName}</div>
                         <div class="risk-score ${riskClass}">${country.risk_score.toFixed(1)}</div>
                         <div>${country.status || 'Monitoring'}</div>
                     </div>
                 `;
             }).join('');
         }
+
+        // EV5-fix: Event delegation for country row clicks
+        document.getElementById('countryRiskList').addEventListener('click', function(e) {
+            const row = e.target.closest('.country-row');
+            if (row && row.dataset.countryCode) {
+                openCountryDrilldown(row.dataset.countryCode);
+            }
+        });
 
         function updateDistressChart(data) {
             if (!data.distress_history) return;
@@ -2822,7 +2836,7 @@
         // === End Predictions Tab ===
 
         // === Auth UI (S7 - Multi-Tenant & RBAC) ===
-        const AUTH_API = 'https://g91wyyvc0m.execute-api.us-east-1.amazonaws.com/prod';
+        const AUTH_API = 'https://txvfllfypa.execute-api.us-east-1.amazonaws.com/prod';
 
         // Feature visibility per role (mirrors RBAC Lambda)
         const FEATURE_VISIBILITY = {
@@ -2886,20 +2900,21 @@
             btn.textContent = 'Signing in...';
 
             try {
-                const resp = await fetch(AUTH_API + '/auth', {
+                const resp = await fetch(AUTH_API + '/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'login', email, password }),
+                    body: JSON.stringify({ email, password }),
                 });
                 const data = await resp.json();
 
-                if (resp.ok && data.tokens) {
+                if (resp.ok && (data.id_token || data.tokens)) {
                     authState.isLoggedIn = true;
-                    authState.tokens = data.tokens;
-                    authState.user = { email, username: data.username || email.split('@')[0] };
-                    authState.role = data.role || 'viewer';
+                    authState.tokens = data.tokens || { id_token: data.id_token, access_token: data.access_token, refresh_token: data.refresh_token };
+                    authState.user = { email, username: (data.user && data.user.name) || data.username || email.split('@')[0] };
+                    authState.role = (data.user && data.user.role) || data.role || 'viewer';
                     onAuthSuccess();
                     closeAuthModal();
+                    showToast('Welcome', `Signed in as ${authState.user.username} (${authState.role})`, 'info');
                 } else {
                     showAuthError(data.error || 'Login failed');
                 }
@@ -2938,10 +2953,10 @@
             btn.textContent = 'Creating account...';
 
             try {
-                const resp = await fetch(AUTH_API + '/auth', {
+                const resp = await fetch(AUTH_API + '/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'register', email, password }),
+                    body: JSON.stringify({ email, password }),
                 });
                 const data = await resp.json();
 
