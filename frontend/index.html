@@ -1703,13 +1703,12 @@
                     updateOverviewKPIs(mapped);
                 }
                 if (dashboard === 'inequality_pulse' && panel === 'composite_score') {
-                    // Inequality composite score → Inequality KPIs
+                    // Inequality composite score → Overview distress index
                     const score = payload.score;
                     if (score !== undefined) {
                         document.getElementById('distressIndex').textContent = formatValue(score);
                         state.kpis.distressIndex = score;
                     }
-                    // Also add to signal feed
                     addSignal({
                         signal_id: 'inequality_score',
                         source: 'FRED',
@@ -1717,8 +1716,24 @@
                         timestamp: payload.timestamp || new Date().toISOString()
                     });
                 }
+                if (dashboard === 'inequality_pulse' && panel === 'fred_kpis') {
+                    // FRED raw KPI values → Inequality Pulse tab
+                    updateInequalityKPIs({
+                        cpi_yoy: payload.cpi_yoy,
+                        fed_rate: payload.fed_rate,
+                        treasury_10y: payload.treasury_10y,
+                        m2_supply: payload.m2_supply,
+                        unemployment: payload.unemployment
+                    });
+                    addSignal({
+                        signal_id: 'fred_kpis_update',
+                        source: 'FRED',
+                        value: 'KPIs updated',
+                        timestamp: payload.timestamp || new Date().toISOString()
+                    });
+                }
                 if (dashboard === 'sentiment_seismic' && panel === 'trigger_probability') {
-                    // Sentiment trigger probability → Sentiment KPIs + Overview
+                    // Sentiment trigger probability → Overview + Sentiment KPIs
                     const prob = payload.probability;
                     if (prob !== undefined) {
                         document.getElementById('triggerProb').textContent = formatValue(prob) + '%';
@@ -1742,6 +1757,24 @@
                         value: prob,
                         timestamp: payload.timestamp || new Date().toISOString()
                     });
+                }
+                if (dashboard === 'sentiment_seismic' && panel === 'market_metrics') {
+                    // Market metrics → Sentiment Seismic tab KPIs
+                    updateSentimentKPIs({
+                        market_sentiment: payload.market_sentiment,
+                        vix: payload.vix,
+                        spy: payload.spy,
+                        qqq: payload.qqq
+                    });
+                    // Also update Overview VIX if present
+                    if (payload.vix !== undefined && payload.vix !== null) {
+                        document.getElementById('vixLevel').textContent = formatValue(payload.vix);
+                        state.kpis.vixLevel = payload.vix;
+                    }
+                }
+                if (dashboard === 'sentiment_seismic' && panel === 'sector_sentiment') {
+                    // Unified sector sentiment → Sentiment Seismic sector grid
+                    updateSectorSentiment(payload);
                 }
                 if (dashboard === 'sovereign_dominoes' && panel === 'risk_scores') {
                     // Sovereign risk scores → Sovereign KPIs

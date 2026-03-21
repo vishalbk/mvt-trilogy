@@ -178,6 +178,56 @@ def compute_trigger_probability(signals: dict) -> float:
     return min(100, max(0, probability))
 
 
+def get_market_prices() -> dict:
+    """Fetch SPY, QQQ, VIX prices from signals table.
+
+    yfinance-streamer writes: dashboard='sentiment_seismic', signalId_timestamp='yahoo#TICKER#<ts>'
+    with raw_data.price containing the actual price.
+    """
+    table = dynamodb.Table(SIGNALS_TABLE)
+    prices = {'vix': None, 'spy': None, 'qqq': None}
+
+    try:
+        response = table.query(
+            KeyConditionExpression='dashboard = :dashboard',
+            ExpressionAttributeValues={':dashboard': 'sentiment_seismic'},
+            ScanIndexForward=False,
+            Limit=100
+        )
+
+        for item in response.get('Items', []):
+            sk = item.get('signalId_timestamp', '')
+            raw_data = item.get('raw_data', {})
+            price = raw_data.get('price')
+
+            if 'yahoo#VIX' in sk and prices['vix'] is None:
+                prices['vix'] = float(price) if price else float(item.get('value', 0))
+            elif 'yahoo#SPY' in sk and prices['spy'] is None:
+                prices['spy'] = float(price) if price else float(item.get('value', 0))
+            elif 'yahoo#QQQ' in sk and prices['qqq'] is None:
+                prices['qqq'] = float(price) if price else float(item.get('value', 0))
+
+        logger.info(f"Market prices: VIX={prices['vix']}, SPY={prices['spy']}, QQQ={prices['qqq']}")
+        return prices
+
+    except Exception as e:
+        logger.error(f"Error fetching market prices: {str(e)}")
+        return prices
+
+
+def classify_market_sentiment(probability: float, vix_price: float) -> str:
+    """Classify overall market sentiment based on trigger probability and VIX.
+
+    Returns 'BULLISH', 'BEARISH', or 'NEUTRAL'.
+    """
+    if probability > 50 or (vix_price and vix_price > 30):
+        return 'BEARISH'
+    elif probability < 25 and (vix_price is None or vix_price < 20):
+        return 'BULLISH'
+    else:
+        return 'NEUTRAL'
+
+
 def write_to_state_table(probability: float, vix_price: float, timestamp: str) -> None:
     """Write trigger probability and VIX price to dashboard state table."""
     table = dynamodb.Table(DASHBOARD_STATE_TABLE)
@@ -196,6 +246,71 @@ def write_to_state_table(probability: float, vix_price: float, timestamp: str) -
         logger.info(f"Wrote trigger probability {probability:.2f} (VIX: {vix_price}) to dashboard state table")
     except Exception as e:
         logger.error(f"Error writing to state table: {str(e)}")
+        raise
+
+
+def write_market_metrics_to_state(probability: float, prices: dict, timestamp: str) -> None:
+    """Write market metrics (VIX, SPY, QQQ, market_sentiment) to dashboard state.
+
+    Creates a 'market_metrics' panel that the frontend Sentiment Seismic tab uses.
+    """
+    table = dynamodb.Table(DASHBOARD_STATE_TABLE)
+
+    try:
+        market_sentiment = classify_market_sentiment(probability, prices.get('vix'))
+
+        item = {
+            'dashboard': 'sentiment_seismic',
+            'panel': 'market_metrics',
+            'market_sentiment': market_sentiment,
+            'timestamp': timestamp,
+            'last_updated': datetime.utcnow().isoformat()
+        }
+        if prices.get('vix') is not None:
+            item['vix'] = Decimal(str(round(prices['vix'], 2)))
+        if prices.get('spy') is not None:
+            item['spy'] = Decimal(str(round(prices['spy'], 2)))
+        if prices.get('qqq') is not None:
+            item['qqq'] = Decimal(str(round(prices['qqq'], 2)))
+
+        table.put_item(Item=item)
+        logger.info(f"Wrote market metrics: sentiment={market_sentiment}, VIX={prices.get('vix')}, SPY={prices.get('spy')}, QQQ={prices.get('qqq')}")
+    except Exception as e:
+        logger.error(f"Error writing market metrics: {str(e)}")
+        raise
+
+
+def write_unified_sector_sentiment(sector_scores: dict, timestamp: str) -> None:
+    """Write unified sector sentiment object to dashboard state.
+
+    Creates a 'sector_sentiment' panel with all sectors as a single DynamoDB item,
+    so the WebSocket broadcast sends it as one unified payload to the frontend.
+    """
+    table = dynamodb.Table(DASHBOARD_STATE_TABLE)
+
+    try:
+        # Build sector_sentiment map: { sector_name: 'BULLISH'|'BEARISH'|'NEUTRAL' }
+        sector_map = {}
+        for sector_name, scores in sector_scores.items():
+            val = scores['value']
+            if val > 60:
+                sector_map[sector_name] = 'BULLISH'
+            elif val < 40:
+                sector_map[sector_name] = 'BEARISH'
+            else:
+                sector_map[sector_name] = 'NEUTRAL'
+
+        item = {
+            'dashboard': 'sentiment_seismic',
+            'panel': 'sector_sentiment',
+            'sector_sentiment': sector_map,
+            'timestamp': timestamp,
+            'last_updated': datetime.utcnow().isoformat()
+        }
+        table.put_item(Item=item)
+        logger.info(f"Wrote unified sector sentiment: {sector_map}")
+    except Exception as e:
+        logger.error(f"Error writing unified sector sentiment: {str(e)}")
         raise
 
 
@@ -364,11 +479,21 @@ def lambda_handler(event, context):
         # Write trigger probability to state table (include VIX price for frontend display)
         write_to_state_table(trigger_probability, signals['vix_price'], timestamp)
 
+        # Fetch market prices (VIX, SPY, QQQ) and write market metrics panel
+        logger.info("Fetching market prices for KPI display")
+        prices = get_market_prices()
+        # Override VIX from direct signal if available
+        if signals['vix_price'] is not None:
+            prices['vix'] = signals['vix_price']
+        write_market_metrics_to_state(trigger_probability, prices, timestamp)
+
         # Compute sector-level sentiment scores
         logger.info("Computing sector-level sentiment scores")
         sector_signals = get_sector_signals()
         sector_scores = compute_sector_sentiment_scores(sector_signals)
         write_sector_sentiment_to_state(sector_scores, timestamp)
+        # Also write unified sector sentiment object for WebSocket broadcast
+        write_unified_sector_sentiment(sector_scores, timestamp)
         logger.info(f"Wrote sector sentiment scores to dashboard state")
 
         # Publish event

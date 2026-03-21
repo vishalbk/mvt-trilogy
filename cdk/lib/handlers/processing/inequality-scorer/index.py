@@ -127,6 +127,61 @@ def compute_inequality_score(signals: dict) -> float:
     return min(100, max(0, score))
 
 
+def get_fred_raw_values() -> dict:
+    """Fetch raw FRED values from signals table for frontend KPI display.
+
+    Maps FRED series to the KPI names the frontend expects:
+    - UNRATE → unemployment
+    - M2NS → m2_supply (raw value in billions)
+    - T10Y2Y → treasury_10y (yield spread as proxy)
+    - UMCSENT → consumer_sentiment
+    - DRCCLACBS → cpi_yoy (credit delinquency as economic stress proxy)
+    - TDSP → fed_rate (debt service ratio as rate proxy)
+    """
+    table = dynamodb.Table(SIGNALS_TABLE)
+    raw_values = {}
+
+    try:
+        response = table.query(
+            KeyConditionExpression='dashboard = :dashboard',
+            ExpressionAttributeValues={':dashboard': 'inequality_pulse'},
+            ScanIndexForward=False,
+            Limit=50
+        )
+
+        for item in response.get('Items', []):
+            sk = item.get('signalId_timestamp', '')
+            raw_data = item.get('raw_data', {})
+            # Get raw value from raw_data or fall back to signal value
+            raw_val = raw_data.get('value', item.get('value'))
+
+            if raw_val is not None:
+                try:
+                    val = float(raw_val)
+                except (ValueError, TypeError):
+                    continue
+
+                if 'UNRATE' in sk and 'unemployment' not in raw_values:
+                    raw_values['unemployment'] = val
+                elif 'M2NS' in sk and 'm2_supply' not in raw_values:
+                    raw_values['m2_supply'] = val
+                elif 'T10Y2Y' in sk and 'treasury_10y' not in raw_values:
+                    raw_values['treasury_10y'] = val
+                elif 'UMCSENT' in sk and 'consumer_sentiment' not in raw_values:
+                    raw_values['consumer_sentiment'] = val
+                elif 'DRCCLACBS' in sk and 'cpi_yoy' not in raw_values:
+                    raw_values['cpi_yoy'] = val
+                elif 'TDSP' in sk and 'fed_rate' not in raw_values:
+                    raw_values['fed_rate'] = val
+
+        logger.info(f"Raw FRED values: {raw_values}")
+        return raw_values
+
+    except Exception as e:
+        logger.error(f"Error fetching raw FRED values: {str(e)}")
+        return raw_values
+
+
 def write_to_state_table(score: float, timestamp: str) -> None:
     """Write composite score to dashboard state table."""
     table = dynamodb.Table(DASHBOARD_STATE_TABLE)
@@ -143,6 +198,32 @@ def write_to_state_table(score: float, timestamp: str) -> None:
         logger.info(f"Wrote inequality score {score:.2f} to dashboard state table")
     except Exception as e:
         logger.error(f"Error writing to state table: {str(e)}")
+        raise
+
+
+def write_fred_kpis_to_state(raw_values: dict, timestamp: str) -> None:
+    """Write individual FRED KPI values to dashboard state for frontend display.
+
+    Creates a 'fred_kpis' panel with all raw values that the frontend
+    Inequality Pulse tab expects (cpi_yoy, fed_rate, treasury_10y, m2_supply, unemployment).
+    """
+    table = dynamodb.Table(DASHBOARD_STATE_TABLE)
+
+    try:
+        item = {
+            'dashboard': 'inequality_pulse',
+            'panel': 'fred_kpis',
+            'timestamp': timestamp,
+            'last_updated': datetime.utcnow().isoformat()
+        }
+        # Add each KPI as a Decimal field
+        for key, val in raw_values.items():
+            item[key] = Decimal(str(round(float(val), 4)))
+
+        table.put_item(Item=item)
+        logger.info(f"Wrote FRED KPIs to dashboard state: {list(raw_values.keys())}")
+    except Exception as e:
+        logger.error(f"Error writing FRED KPIs to state table: {str(e)}")
         raise
 
 
@@ -182,6 +263,12 @@ def lambda_handler(event, context):
 
         # Write to state table
         write_to_state_table(inequality_score, timestamp)
+
+        # Fetch and write raw FRED KPIs for frontend display
+        logger.info("Fetching raw FRED values for KPI display")
+        raw_values = get_fred_raw_values()
+        if raw_values:
+            write_fred_kpis_to_state(raw_values, timestamp)
 
         # Publish event
         publish_event(inequality_score, timestamp)
