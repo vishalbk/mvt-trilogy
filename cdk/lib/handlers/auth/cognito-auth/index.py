@@ -66,8 +66,8 @@ def log_audit_event(action, username, success, detail=''):
     try:
         table = dynamodb.Table(AUDIT_TABLE)
         table.put_item(Item={
+            'eventId': f'auth_{action}#{username}#{datetime.utcnow().isoformat()}',
             'event_type': f'auth_{action}',
-            'event_id': f'{username}#{datetime.utcnow().isoformat()}',
             'username': username,
             'action': action,
             'success': success,
