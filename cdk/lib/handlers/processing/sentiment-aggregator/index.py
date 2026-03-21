@@ -446,7 +446,7 @@ def write_sector_sentiment_to_state(sector_scores: dict, timestamp: str) -> None
         for sector_name, scores in sector_scores.items():
             item = {
                 'dashboard': 'sentiment_seismic',
-                'metric': f'sector_{sector_name}',
+                'panel': f'sector_{sector_name}',
                 'value': Decimal(str(scores['value'])),
                 'trend': scores['trend'],
                 'change_24h': Decimal(str(scores['change_24h'])),
