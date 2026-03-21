@@ -1,0 +1,37 @@
+%%{init: {'theme': 'dark'}}%%
+gantt
+    title MVT Observatory — Backend Job Timing Diagram (v1)
+    dateFormat HH:mm
+    axisFormat %H:%M
+
+    section Ingestion Pollers
+    mvt-finnhub-connector (2min)          :active, finn, 00:00, 2m
+    mvt-finnhub-connector repeat          :active, finn2, 00:02, 2m
+    mvt-finnhub-connector ...             :active, finn3, 00:04, 2m
+    mvt-yfinance-streamer (5min)          :active, yfin, 00:00, 5m
+    mvt-yfinance-streamer repeat          :active, yfin2, 00:05, 5m
+    mvt-gdelt-querier (15min)             :active, gdelt, 00:00, 15m
+    mvt-fred-poller (1h)                  :active, fred, 00:00, 60m
+    mvt-trends-poller (4h)                :active, trends, 00:00, 240m
+    mvt-worldbank-poller (1d)             :crit, wb, 00:00, 1440m
+
+    section Processing (EventBridge)
+    sentiment-aggregator                  :active, sent, 00:02, 1m
+    inequality-scorer                     :active, ineq, 00:03, 1m
+    contagion-modeler                     :active, cont, 00:03, 2m
+    vulnerability-composite               :active, vuln, 00:04, 1m
+    cross-dashboard-router                :active, router, 00:05, 1m
+
+    section History (NEW - EV1)
+    history-writer (Stream trigger)       :done, hw, 00:05, 1m
+    history-writer (continuous)           :done, hw2, 00:07, 1m
+
+    section Realtime Delivery
+    ws-broadcast (Stream trigger)         :active, wsb, 00:05, 1m
+    ws-broadcast (continuous)             :active, wsb2, 00:07, 1m
+
+    section Data Flow Timeline
+    Signals written to DynamoDB           :milestone, sig, 00:02, 0m
+    Dashboard-state updated               :milestone, ds, 00:05, 0m
+    History table populated               :milestone, hist, 00:05, 0m
+    WebSocket push to browser             :milestone, ws, 00:06, 0m

@@ -1,0 +1,131 @@
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#00d9ff', 'edgeLabelBackground': '#0a0e27'}}}%%
+graph TB
+    subgraph FRONTEND["🌐 Frontend (S3 + CloudFront)"]
+        style FRONTEND fill:#0a3d0a,stroke:#00ff41
+        CF["CloudFront<br/>E2JPNGN2TCNNV8"]
+        S3["S3 Bucket<br/>mvt-frontend-*"]
+        DASH["Dashboard SPA<br/>6 Tabs • 2835 lines"]
+    end
+
+    subgraph AWS["☁️ AWS (us-east-1 • Account 572664774559)"]
+        style AWS fill:#1a1a2e,stroke:#ff9900
+
+        subgraph INGESTION["Layer 1: Ingestion (6 Pollers)"]
+            style INGESTION fill:#2d1a0a,stroke:#ff9900
+            FINN["mvt-finnhub-connector<br/>rate(2 min)"]
+            FRED["mvt-fred-poller<br/>rate(1 hour)"]
+            GDELT["mvt-gdelt-querier<br/>rate(15 min)"]
+            TRENDS["mvt-trends-poller<br/>rate(4 hours)"]
+            WB["mvt-worldbank-poller<br/>rate(1 day)"]
+            YFIN["mvt-yfinance-streamer<br/>rate(5 min)"]
+        end
+
+        subgraph PROCESSING["Layer 2: Processing (5 Lambdas)"]
+            style PROCESSING fill:#1a0a2d,stroke:#9966ff
+            SENT["mvt-sentiment-aggregator"]
+            INEQ["mvt-inequality-scorer"]
+            CONT["mvt-contagion-modeler"]
+            VULN["mvt-vulnerability-composite"]
+            ROUTER["mvt-cross-dashboard-router"]
+        end
+
+        subgraph HISTORY["Layer 3: History (NEW - Sprint EV1)"]
+            style HISTORY fill:#0a2d2d,stroke:#00d9ff
+            HWRITER["mvt-history-writer<br/>DynamoDB Stream trigger"]
+            HAPI["mvt-history-api<br/>GET /api/history"]
+        end
+
+        subgraph REALTIME["Layer 4: Realtime"]
+            style REALTIME fill:#0a0a2d,stroke:#6666ff
+            WSCONN["mvt-ws-connect"]
+            WSDISC["mvt-ws-disconnect"]
+            WSBCAST["mvt-ws-broadcast<br/>DynamoDB Stream trigger"]
+        end
+
+        subgraph AUTH["Layer 5: Auth & RBAC (6 Lambdas)"]
+            style AUTH fill:#2d0a0a,stroke:#ff4444
+            COGNITO["mvt-cognito-auth"]
+            PREFS["mvt-user-preferences"]
+            ALERTS["mvt-alert-config"]
+            RBAC["mvt-rbac-authorizer"]
+            WATCH["mvt-watchlists"]
+            AUDIT["mvt-audit-log"]
+        end
+
+        subgraph STORAGE["DynamoDB Tables"]
+            style STORAGE fill:#1a2d1a,stroke:#00ff41
+            SIGNALS[("mvt-signals<br/>PK: dashboard<br/>SK: signalId_timestamp")]
+            DSTATE[("mvt-dashboard-state<br/>PK: dashboard<br/>SK: panel<br/>⚡ Stream enabled")]
+            CONNS[("mvt-connections<br/>PK: connectionId")]
+            KPIHIST[("mvt-kpi-history<br/>PK: dashboard#metric<br/>SK: timestamp<br/>TTL: 90 days<br/>🆕 NEW")]
+            AUDITDB[("mvt-audit<br/>PK: eventId")]
+        end
+
+        EB["EventBridge<br/>6 Schedule Rules<br/>+ Custom Bus"]
+        APIGW["API Gateway<br/>WebSocket + REST"]
+        COGNPOOL["Cognito User Pool"]
+    end
+
+    subgraph GCP["☁️ GCP (mvt-observer)"]
+        style GCP fill:#1a1a3d,stroke:#4285f4
+        PUBSUB["Pub/Sub<br/>6 Topics"]
+        BQ["BigQuery<br/>mvt_analytics dataset"]
+        FS["Firestore<br/>(schema designed)"]
+        GCF["Cloud Functions<br/>(3 coded, not deployed)"]
+    end
+
+    subgraph EXTERNAL["📡 External APIs"]
+        style EXTERNAL fill:#2d2d1a,stroke:#ffd700
+        FINNAPI["Finnhub API"]
+        FREDAPI["FRED API"]
+        GDELTAPI["GDELT API v2"]
+        TRENDSAPI["Google Trends"]
+        WBAPI["World Bank API"]
+        YFINAPI["Yahoo Finance"]
+    end
+
+    %% Data Flow
+    FINNAPI -->|"sentiment data"| FINN
+    FREDAPI -->|"economic indicators"| FRED
+    GDELTAPI -->|"geopolitical events"| GDELT
+    TRENDSAPI -->|"search trends"| TRENDS
+    WBAPI -->|"country indicators"| WB
+    YFINAPI -->|"VIX, SPY, QQQ"| YFIN
+
+    FINN -->|"write signals"| SIGNALS
+    FRED -->|"write signals"| SIGNALS
+    GDELT -->|"write signals"| SIGNALS
+    TRENDS -->|"write signals"| SIGNALS
+    WB -->|"write signals"| SIGNALS
+    YFIN -->|"write signals"| SIGNALS
+
+    EB -->|"schedule"| FINN
+    EB -->|"schedule"| FRED
+    EB -->|"schedule"| GDELT
+    EB -->|"schedule"| TRENDS
+    EB -->|"schedule"| WB
+    EB -->|"schedule"| YFIN
+    EB -->|"events"| SENT
+    EB -->|"events"| INEQ
+    EB -->|"events"| CONT
+    EB -->|"events"| VULN
+    EB -->|"events"| ROUTER
+
+    SENT -->|"write state"| DSTATE
+    INEQ -->|"write state"| DSTATE
+    CONT -->|"write state"| DSTATE
+    VULN -->|"write state"| DSTATE
+
+    DSTATE -->|"Stream"| WSBCAST
+    DSTATE -->|"Stream"| HWRITER
+    HWRITER -->|"write history"| KPIHIST
+
+    WSBCAST -->|"push"| APIGW
+    APIGW -->|"WebSocket"| DASH
+    APIGW -->|"REST"| HAPI
+    HAPI -->|"query"| KPIHIST
+
+    CF --> S3
+    S3 --> DASH
+
+    COGNPOOL -.->|"JWT"| RBAC

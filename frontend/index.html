@@ -982,6 +982,34 @@
         }
         .settings-logout-btn:hover { background: rgba(255,68,68,0.25); }
         .tab-btn.auth-hidden { display: none; }
+
+        /* Time Range Selector (EV1-08) */
+        .time-range-selector {
+            display: flex;
+            gap: 0.3rem;
+        }
+        .range-btn {
+            background: #0a0e27;
+            border: 1px solid #1e2749;
+            color: #888;
+            padding: 0.3rem 0.7rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .range-btn:hover { border-color: #00d9ff; color: #ccc; }
+        .range-btn.active { background: #00d9ff22; border-color: #00d9ff; color: #00d9ff; }
+
+        /* KPI Trend Arrow (EV1-07) */
+        .kpi-trend-arrow {
+            display: inline-block;
+            margin-left: 0.3rem;
+            font-size: 0.75rem;
+        }
+        .kpi-trend-arrow.up { color: #ff4444; }
+        .kpi-trend-arrow.down { color: #00ff41; }
+        .kpi-trend-arrow.stable { color: #888; }
     </style>
 </head>
 <body>
@@ -1052,7 +1080,16 @@
             </div>
 
             <div class="chart-section">
-                <h3 class="chart-title">Distress Index Over Time</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                    <h3 class="chart-title" style="margin-bottom:0;">Distress Index Over Time</h3>
+                    <div class="time-range-selector" id="timeRangeSelector">
+                        <button class="range-btn" data-range="1h">1H</button>
+                        <button class="range-btn" data-range="6h">6H</button>
+                        <button class="range-btn active" data-range="24h">24H</button>
+                        <button class="range-btn" data-range="7d">7D</button>
+                        <button class="range-btn" data-range="30d">30D</button>
+                    </div>
+                </div>
                 <div class="chart-container">
                     <canvas id="distressChart"></canvas>
                 </div>
@@ -2008,11 +2045,41 @@
             return date.toLocaleTimeString();
         }
 
+        // === HISTORY API INTEGRATION (Evolve Sprint 1) ===
+        // Detect the history API base URL — try the REST API first, fall back to same origin
+        let HISTORY_API_BASE = '';  // Will be set after first successful fetch
+
+        async function fetchHistoryAPI(dashboard, metric, range, granularity) {
+            const params = new URLSearchParams({ dashboard, metric, range });
+            if (granularity) params.set('granularity', granularity);
+
+            // Try known API endpoints
+            const urls = HISTORY_API_BASE
+                ? [`${HISTORY_API_BASE}/api/history?${params}`]
+                : [
+                    // Try the REST API created by deploy script
+                    `https://g91wyyvc0m.execute-api.us-east-1.amazonaws.com/prod/api/history?${params}`,
+                ];
+
+            for (const url of urls) {
+                try {
+                    const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        // Remember the working base
+                        HISTORY_API_BASE = url.split('/api/history')[0];
+                        return data;
+                    }
+                } catch (e) {
+                    console.log('History API not available at:', url);
+                }
+            }
+            return null;
+        }
+
         function drawSparkline(containerId, data, color) {
-            // Create small SVG sparkline (100x30 pixels)
-            // For now, generate sample data if empty (placeholder for when API is deployed)
             if (!data || data.length === 0) {
-                // Generate sample data points for demo
+                // Generate sample data points as fallback
                 data = [];
                 for (let i = 0; i < 7; i++) {
                     data.push(Math.random() * 40 + 30);
@@ -2037,14 +2104,72 @@
             }
         }
 
-        function updateAllSparklines() {
-            // Draw sparklines for overview KPIs
-            // Using placeholder data for now - will be replaced with API data when history-api is deployed
-            drawSparkline('sparkline-distress', state.sparklineData.distressIndex, '#00d9ff');
-            drawSparkline('sparkline-trigger', state.sparklineData.triggerProb, '#00d9ff');
-            drawSparkline('sparkline-contagion', state.sparklineData.contagionRisk, '#00d9ff');
-            drawSparkline('sparkline-vix', state.sparklineData.vixLevel, '#00d9ff');
+        // KPI sparkline mapping: { elementId: { dashboard, metric, sparklineId, changeId } }
+        const KPI_SPARKLINE_MAP = {
+            distressIndex: { dashboard: 'composite', metric: 'vulnerability_score', sparklineId: 'sparkline-distress', changeId: 'distressChange' },
+            triggerProb: { dashboard: 'sentiment_seismic', metric: 'probability', sparklineId: 'sparkline-trigger', changeId: 'triggerChange' },
+            contagionRisk: { dashboard: 'sovereign_dominoes', metric: 'country_scores.ZAF', sparklineId: 'sparkline-contagion', changeId: 'contagionChange' },
+            vixLevel: { dashboard: 'sentiment_seismic', metric: 'vix_price', sparklineId: 'sparkline-vix', changeId: 'vixChange' },
+        };
+
+        async function loadSparklineFromHistory(kpiKey) {
+            const cfg = KPI_SPARKLINE_MAP[kpiKey];
+            if (!cfg) return;
+
+            const data = await fetchHistoryAPI(cfg.dashboard, cfg.metric, '24h');
+            if (data && data.data && data.data.length > 0) {
+                const values = data.data.map(d => d.value);
+                drawSparkline(cfg.sparklineId, values, '#00d9ff');
+
+                // Update change %
+                if (data.change_pct !== null && data.change_pct !== undefined) {
+                    const changeEl = document.getElementById(cfg.changeId);
+                    if (changeEl) {
+                        const sign = data.change_pct >= 0 ? '+' : '';
+                        const cls = data.change_pct > 0 ? 'negative' : data.change_pct < 0 ? 'positive' : '';
+                        const arrow = data.change_pct > 0 ? '▲' : data.change_pct < 0 ? '▼' : '—';
+                        changeEl.innerHTML = `<span class="kpi-trend-arrow ${data.change_pct > 0 ? 'up' : data.change_pct < 0 ? 'down' : 'stable'}">${arrow}</span> ${sign}${data.change_pct.toFixed(1)}% (24h)`;
+                        changeEl.className = 'kpi-change ' + cls;
+                    }
+                }
+            } else {
+                // Fallback to random sparkline
+                drawSparkline(cfg.sparklineId, state.sparklineData[kpiKey] || [], '#00d9ff');
+            }
         }
+
+        async function updateAllSparklines() {
+            // Try to load real data from history API for each KPI
+            for (const kpiKey of Object.keys(KPI_SPARKLINE_MAP)) {
+                loadSparklineFromHistory(kpiKey);
+            }
+        }
+
+        // Distress chart from history API (EV1-06)
+        let currentChartRange = '24h';
+
+        async function loadDistressChartFromHistory(range) {
+            currentChartRange = range;
+            const data = await fetchHistoryAPI('composite', 'vulnerability_score', range);
+            if (data && data.data && data.data.length > 0) {
+                const history = data.data.map(d => ({
+                    timestamp: d.timestamp,
+                    value: d.value
+                }));
+                initDistressChart(history);
+            } else {
+                console.log('No history data for distress chart, range:', range);
+            }
+        }
+
+        // Time-range selector (EV1-08)
+        document.querySelectorAll('.range-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                loadDistressChartFromHistory(btn.dataset.range);
+            });
+        });
 
         // === SRE OBSERVATORY DATA HANDLING ===
 
@@ -2701,7 +2826,10 @@
         updateTimestamp();
         setInterval(updateTimestamp, 1000);
         updateAllSparklines();
+        loadDistressChartFromHistory('24h');
         initSREErrorChart();
+        // Refresh sparklines every 5 minutes
+        setInterval(updateAllSparklines, 300000);
     </script>
 
     <!-- Auth Modal -->
