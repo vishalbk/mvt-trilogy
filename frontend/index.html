@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MVT Observatory - Macro Vulnerability Tracking</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -1194,6 +1195,30 @@
         /* Country row clickable */
         .country-row { cursor: pointer; transition: background 0.2s; }
         .country-row:hover { background: #1e274922; }
+
+        /* DAG Visualization */
+        .dag-container { background: #0f1229; border: 1px solid #1e2749; border-radius: 8px; padding: 1.5rem; }
+        .dag-title { font-size: 1.1rem; font-weight: 600; color: #e0e6ed; margin-bottom: 0.75rem; }
+        .dag-controls { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+        .dag-btn { background: #1e2749; border: 1px solid #2d3a66; color: #00d9ff; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; }
+        .dag-btn:hover { background: #2d3a66; }
+        .dag-btn.active { background: #00d9ff22; border-color: #00d9ff; }
+        .dag-canvas { position: relative; height: 500px; border: 1px solid #1e2749; border-radius: 4px; background: #080b1e; overflow: hidden; }
+        .dag-svg { width: 100%; height: 100%; }
+        .dag-svg .dag-edge { stroke-linecap: round; }
+        .dag-svg .dag-node { cursor: pointer; stroke: #0a0e27; stroke-width: 2; transition: r 0.3s; }
+        .dag-svg .dag-node:hover { stroke: #00d9ff; stroke-width: 3; }
+        .dag-svg .dag-label { fill: #c0c8d4; font-size: 10px; pointer-events: none; text-anchor: middle; dominant-baseline: central; font-weight: 600; }
+        .dag-svg .dag-risk-label { fill: #888; font-size: 8px; pointer-events: none; text-anchor: middle; }
+        .dag-tooltip { position: fixed; background: #141829ee; border: 1px solid #2d3a66; padding: 0.6rem 0.8rem; border-radius: 6px; font-size: 0.78rem; color: #e0e6ed; pointer-events: none; z-index: 999; display: none; max-width: 250px; line-height: 1.5; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        .dag-tooltip strong { color: #00d9ff; }
+        .dag-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.5rem; margin-top: 1rem; font-size: 0.78rem; color: #888; }
+        .dag-legend-item { display: flex; align-items: center; gap: 0.4rem; }
+        .dag-legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .dag-legend-line { width: 24px; height: 2px; flex-shrink: 0; }
+        .dag-cascade-info { margin-top: 1rem; padding: 0.75rem; background: #0a0e2788; border-radius: 4px; font-size: 0.82rem; color: #c0c8d4; }
+        .dag-cascade-path { display: flex; align-items: center; gap: 0.3rem; margin: 0.3rem 0; }
+        .dag-cascade-arrow { color: #ff6b6b; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -1402,6 +1427,33 @@
                 <div id="countryRiskList">
                     <div class="signal-empty" style="grid-column: 1/-1;">Waiting for data...</div>
                 </div>
+            </div>
+
+            <!-- Contagion Propagation DAG -->
+            <div class="dag-container" style="margin-top: 2rem;">
+                <div class="dag-title">Contagion Propagation Network</div>
+                <div class="dag-controls">
+                    <button class="dag-btn" id="dagPlayBtn" onclick="playContagionCascade()">▶ Simulate Cascade</button>
+                    <button class="dag-btn" id="dagResetBtn" onclick="resetDAGLayout()">↻ Reset</button>
+                    <label style="display:flex; align-items:center; gap:0.3rem; color:#888; font-size:0.82rem;">
+                        Risk Filter:
+                        <input id="dagRiskThreshold" type="range" min="0" max="80" value="0" step="10" oninput="filterDAGByRisk(this.value)" style="width:80px; accent-color:#00d9ff;">
+                        <span id="dagRiskValue" style="color:#00d9ff; min-width:20px;">0</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.3rem; color:#888; font-size:0.82rem;">
+                        <select id="dagRegionFilter" onchange="filterDAGByRegion(this.value)" style="background:#1e2749; border:1px solid #2d3a66; color:#e0e6ed; padding:0.2rem 0.4rem; border-radius:4px; font-size:0.82rem;">
+                            <option value="all">All Regions</option>
+                            <option value="latam">Latin America</option>
+                            <option value="mideast_africa">Middle East & Africa</option>
+                            <option value="asia">Asia</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="dag-canvas" id="sovereignDAG">
+                    <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:0.9rem;">Waiting for network data...</div>
+                </div>
+                <div class="dag-legend" id="dagLegend"></div>
+                <div class="dag-cascade-info" id="dagCascadeInfo" style="display:none;"></div>
             </div>
 
             <div class="signal-feed" style="margin-top: 2rem;">
@@ -2009,6 +2061,22 @@
                         value: Object.keys(countryScores || {}).length + ' countries',
                         timestamp: payload.timestamp || new Date().toISOString()
                     });
+                }
+                if (dashboard === 'sovereign_dominoes' && panel === 'network_data') {
+                    // Network graph data → DAG visualization
+                    state.networkData = { nodes: payload.nodes || [], edges: payload.edges || [] };
+                    renderSovereignDAG(state.networkData.nodes, state.networkData.edges);
+                    addSignal({
+                        signal_id: 'network_update',
+                        source: 'WORLDBANK',
+                        value: `${payload.node_count || 0} nodes, ${payload.edge_count || 0} edges`,
+                        timestamp: payload.timestamp || new Date().toISOString()
+                    });
+                }
+                if (dashboard === 'sovereign_dominoes' && panel === 'cascade_probabilities') {
+                    // Cascade path probabilities → DAG cascade info
+                    state.cascadeProbs = payload.paths || [];
+                    updateCascadeInfo();
                 }
                 // SRE Observatory data
                 if (dashboard === 'sre_observatory') {
@@ -3401,6 +3469,352 @@
         initSREErrorChart();
         // Refresh sparklines every 5 minutes
         setInterval(updateAllSparklines, 300000);
+
+        // ==========================================
+        // === EV7-DAG: Sovereign Contagion DAG ===
+        // ==========================================
+        const DAG_COLORS = {
+            critical: '#ff4444', warning: '#ffd700', monitoring: '#00ff41',
+            latam: '#00d9ff', mideast_africa: '#ff6b6b', asia: '#22cc88',
+            edge: '#445566', edgeHover: '#00d9ff', cascade: '#ffaa00'
+        };
+        const REGION_LABELS = { latam: 'Latin America', mideast_africa: 'Middle East & Africa', asia: 'Asia' };
+        let dagSimulation = null;
+        let dagSvg = null;
+        let dagG = null;
+        let dagTooltip = null;
+        state.networkData = null;
+        state.cascadeProbs = null;
+        state.dagFilterRisk = 0;
+        state.dagFilterRegion = 'all';
+
+        function initSovereignDAG() {
+            const container = document.getElementById('sovereignDAG');
+            if (!container || typeof d3 === 'undefined') return;
+            container.innerHTML = '';
+            const w = container.clientWidth;
+            const h = container.clientHeight || 500;
+
+            dagSvg = d3.select('#sovereignDAG').append('svg')
+                .attr('width', w).attr('height', h).attr('class', 'dag-svg');
+
+            // Arrow markers for directed edges
+            const defs = dagSvg.append('defs');
+            ['default','hover','cascade'].forEach(type => {
+                defs.append('marker').attr('id', `dag-arrow-${type}`)
+                    .attr('markerWidth', 8).attr('markerHeight', 8)
+                    .attr('refX', 20).attr('refY', 4).attr('orient', 'auto')
+                    .append('path').attr('d', 'M0,0 L8,4 L0,8 L2,4 Z')
+                    .attr('fill', type === 'cascade' ? DAG_COLORS.cascade : type === 'hover' ? DAG_COLORS.edgeHover : '#556677');
+            });
+
+            // Zoom/pan
+            dagG = dagSvg.append('g');
+            dagSvg.call(d3.zoom().scaleExtent([0.3, 4]).on('zoom', e => dagG.attr('transform', e.transform)));
+
+            dagG.append('g').attr('class', 'dag-edges');
+            dagG.append('g').attr('class', 'dag-nodes');
+            dagG.append('g').attr('class', 'dag-labels');
+            dagG.append('g').attr('class', 'dag-risk-labels');
+
+            // Tooltip
+            if (!document.getElementById('dagTooltipEl')) {
+                dagTooltip = document.createElement('div');
+                dagTooltip.id = 'dagTooltipEl';
+                dagTooltip.className = 'dag-tooltip';
+                document.body.appendChild(dagTooltip);
+            } else {
+                dagTooltip = document.getElementById('dagTooltipEl');
+            }
+        }
+
+        function getDirectedEdges(nodes, edges) {
+            // Convert edges to directional: higher risk → lower risk
+            return edges.map(e => {
+                const srcNode = nodes.find(n => n.id === (e.source.id || e.source));
+                const tgtNode = nodes.find(n => n.id === (e.target.id || e.target));
+                if (!srcNode || !tgtNode) return e;
+                const srcRisk = parseFloat(srcNode.risk_score) || 0;
+                const tgtRisk = parseFloat(tgtNode.risk_score) || 0;
+                // Direction: high risk → low risk (contagion flows from stressed to vulnerable)
+                if (srcRisk < tgtRisk) {
+                    return { ...e, source: e.target, target: e.source, source_risk: tgtRisk, target_risk: srcRisk, risk_delta: Math.abs(srcRisk - tgtRisk) };
+                }
+                return { ...e, source_risk: srcRisk, target_risk: tgtRisk, risk_delta: Math.abs(srcRisk - tgtRisk) };
+            });
+        }
+
+        function renderSovereignDAG(rawNodes, rawEdges) {
+            if (!rawNodes || !rawEdges || rawNodes.length === 0) return;
+            if (!dagSvg) initSovereignDAG();
+            if (!dagSvg) return;
+
+            const container = document.getElementById('sovereignDAG');
+            const w = container.clientWidth;
+            const h = container.clientHeight || 500;
+            dagSvg.attr('width', w).attr('height', h);
+
+            // Apply filters
+            let nodes = rawNodes.filter(n => parseFloat(n.risk_score) >= state.dagFilterRisk);
+            if (state.dagFilterRegion !== 'all') nodes = nodes.filter(n => n.region === state.dagFilterRegion);
+            const nodeIds = new Set(nodes.map(n => n.id));
+
+            let edges = getDirectedEdges(rawNodes, rawEdges).filter(e => {
+                const sid = e.source.id || e.source;
+                const tid = e.target.id || e.target;
+                return nodeIds.has(sid) && nodeIds.has(tid);
+            });
+
+            // Deep copy for D3 (force mutates objects)
+            const simNodes = nodes.map(n => ({ ...n, risk_score: parseFloat(n.risk_score) || 0 }));
+            const simEdges = edges.map(e => ({
+                ...e,
+                source: e.source.id || e.source,
+                target: e.target.id || e.target,
+                weight: parseFloat(e.weight) || 0.5
+            }));
+
+            // Stop old simulation
+            if (dagSimulation) dagSimulation.stop();
+
+            // Force simulation
+            dagSimulation = d3.forceSimulation(simNodes)
+                .force('link', d3.forceLink(simEdges).id(d => d.id).distance(d => 120 - d.weight * 30))
+                .force('charge', d3.forceManyBody().strength(d => -120 - d.risk_score * 1.5))
+                .force('center', d3.forceCenter(w / 2, h / 2))
+                .force('collision', d3.forceCollide().radius(d => 12 + d.risk_score / 8))
+                .force('x', d3.forceX(w / 2).strength(0.05))
+                .force('y', d3.forceY(h / 2).strength(0.05));
+
+            // --- EDGES ---
+            const edgeSel = dagG.select('.dag-edges').selectAll('line').data(simEdges, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+            edgeSel.exit().remove();
+            const edgeEnter = edgeSel.enter().append('line').attr('class', 'dag-edge');
+            const edgeAll = edgeEnter.merge(edgeSel)
+                .attr('stroke', DAG_COLORS.edge)
+                .attr('stroke-width', d => 1.5 + d.weight * 2.5)
+                .attr('stroke-opacity', d => 0.35 + d.weight * 0.35)
+                .attr('marker-end', 'url(#dag-arrow-default)')
+                .on('mouseover', function(evt, d) { showDAGTooltip(evt, edgeTooltipHTML(d)); d3.select(this).attr('stroke', DAG_COLORS.edgeHover).attr('stroke-opacity', 0.9).attr('marker-end','url(#dag-arrow-hover)'); })
+                .on('mouseout', function(evt, d) { hideDAGTooltip(); d3.select(this).attr('stroke', DAG_COLORS.edge).attr('stroke-opacity', 0.35 + d.weight * 0.35).attr('marker-end','url(#dag-arrow-default)'); });
+
+            // --- NODES ---
+            const nodeSel = dagG.select('.dag-nodes').selectAll('circle').data(simNodes, d => d.id);
+            nodeSel.exit().remove();
+            const nodeEnter = nodeSel.enter().append('circle').attr('class', 'dag-node');
+            const nodeAll = nodeEnter.merge(nodeSel)
+                .attr('r', d => 8 + d.risk_score / 10)
+                .attr('fill', d => d.status === 'critical' ? DAG_COLORS.critical : d.status === 'warning' ? DAG_COLORS.warning : DAG_COLORS.monitoring)
+                .call(d3.drag().on('start', dagDragStart).on('drag', dagDragged).on('end', dagDragEnd))
+                .on('mouseover', function(evt, d) {
+                    showDAGTooltip(evt, nodeTooltipHTML(d));
+                    highlightConnections(d.id, true);
+                })
+                .on('mouseout', function(evt, d) {
+                    hideDAGTooltip();
+                    highlightConnections(d.id, false);
+                })
+                .on('click', function(evt, d) { openCountryDrilldown(d.id); })
+                .on('dblclick', function(evt, d) { evt.stopPropagation(); playContagionFrom(d.id); });
+
+            // --- LABELS ---
+            const lblSel = dagG.select('.dag-labels').selectAll('text').data(simNodes, d => d.id);
+            lblSel.exit().remove();
+            const lblEnter = lblSel.enter().append('text').attr('class', 'dag-label');
+            lblEnter.merge(lblSel).text(d => d.id);
+
+            // --- RISK LABELS ---
+            const rlblSel = dagG.select('.dag-risk-labels').selectAll('text').data(simNodes, d => d.id);
+            rlblSel.exit().remove();
+            const rlblEnter = rlblSel.enter().append('text').attr('class', 'dag-risk-label');
+            rlblEnter.merge(rlblSel).text(d => d.risk_score.toFixed(0));
+
+            // Tick
+            dagSimulation.on('tick', () => {
+                edgeAll.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                nodeAll.attr('cx', d => d.x = Math.max(20, Math.min(w - 20, d.x))).attr('cy', d => d.y = Math.max(20, Math.min(h - 20, d.y)));
+                dagG.select('.dag-labels').selectAll('text').attr('x', d => d.x).attr('y', d => d.y - 14 - d.risk_score / 10);
+                dagG.select('.dag-risk-labels').selectAll('text').attr('x', d => d.x).attr('y', d => d.y + 4);
+            });
+
+            updateDAGLegend(simNodes, simEdges);
+            updateCascadeInfo();
+        }
+
+        function highlightConnections(nodeId, highlight) {
+            dagG.select('.dag-edges').selectAll('line')
+                .attr('stroke-opacity', d => {
+                    if (!highlight) return 0.35 + (parseFloat(d.weight) || 0.5) * 0.35;
+                    const sid = d.source.id || d.source;
+                    const tid = d.target.id || d.target;
+                    return (sid === nodeId || tid === nodeId) ? 0.9 : 0.08;
+                })
+                .attr('stroke-width', d => {
+                    if (!highlight) return 1.5 + (parseFloat(d.weight) || 0.5) * 2.5;
+                    const sid = d.source.id || d.source;
+                    const tid = d.target.id || d.target;
+                    return (sid === nodeId || tid === nodeId) ? 4 : 1;
+                })
+                .attr('stroke', d => {
+                    if (!highlight) return DAG_COLORS.edge;
+                    const sid = d.source.id || d.source;
+                    const tid = d.target.id || d.target;
+                    if (sid === nodeId) return '#ff6b6b'; // outgoing = red
+                    if (tid === nodeId) return '#00d9ff'; // incoming = blue
+                    return '#222';
+                });
+            dagG.select('.dag-nodes').selectAll('circle')
+                .attr('opacity', d => highlight ? (d.id === nodeId ? 1 : 0.4) : 1);
+        }
+
+        function nodeTooltipHTML(d) {
+            const regionLabel = REGION_LABELS[d.region] || d.region;
+            return `<strong>${COUNTRY_NAMES[d.id] || d.id}</strong><br>
+                Risk Score: <span style="color:${d.status === 'critical' ? '#ff4444' : d.status === 'warning' ? '#ffd700' : '#00ff41'}">${d.risk_score.toFixed(1)}</span><br>
+                Status: ${d.status}<br>
+                Region: ${regionLabel}<br>
+                <span style="color:#666;font-size:0.7rem;">Click to drill down · Double-click to simulate cascade</span>`;
+        }
+
+        function edgeTooltipHTML(d) {
+            const src = d.source.id || d.source;
+            const tgt = d.target.id || d.target;
+            const strength = (parseFloat(d.weight) || 0).toFixed(3);
+            return `<strong>${COUNTRY_NAMES[src] || src} → ${COUNTRY_NAMES[tgt] || tgt}</strong><br>
+                Propagation Strength: ${strength}<br>
+                Risk Delta: ${(parseFloat(d.risk_delta) || 0).toFixed(1)}<br>
+                Region: ${REGION_LABELS[d.region] || d.region}`;
+        }
+
+        function showDAGTooltip(evt, html) {
+            if (!dagTooltip) return;
+            dagTooltip.innerHTML = html;
+            dagTooltip.style.display = 'block';
+            dagTooltip.style.left = (evt.clientX + 12) + 'px';
+            dagTooltip.style.top = (evt.clientY + 12) + 'px';
+        }
+        function hideDAGTooltip() { if (dagTooltip) dagTooltip.style.display = 'none'; }
+
+        function dagDragStart(evt, d) { if (!evt.active) dagSimulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+        function dagDragged(evt, d) { d.fx = evt.x; d.fy = evt.y; }
+        function dagDragEnd(evt, d) { if (!evt.active) dagSimulation.alphaTarget(0); d.fx = null; d.fy = null; }
+
+        function filterDAGByRisk(val) {
+            state.dagFilterRisk = parseInt(val);
+            document.getElementById('dagRiskValue').textContent = val;
+            if (state.networkData) renderSovereignDAG(state.networkData.nodes, state.networkData.edges);
+        }
+
+        function filterDAGByRegion(val) {
+            state.dagFilterRegion = val;
+            if (state.networkData) renderSovereignDAG(state.networkData.nodes, state.networkData.edges);
+        }
+
+        function resetDAGLayout() {
+            if (state.networkData) {
+                if (dagSimulation) dagSimulation.stop();
+                dagSvg = null; dagG = null;
+                initSovereignDAG();
+                renderSovereignDAG(state.networkData.nodes, state.networkData.edges);
+            }
+        }
+
+        function playContagionCascade() {
+            if (!state.networkData || !state.networkData.nodes.length) return;
+            // Start from highest risk node
+            const highRisk = [...state.networkData.nodes].sort((a, b) => parseFloat(b.risk_score) - parseFloat(a.risk_score))[0];
+            playContagionFrom(highRisk.id);
+        }
+
+        function playContagionFrom(startId) {
+            if (!dagG) return;
+            const visited = new Set();
+            const edges = dagG.select('.dag-edges').selectAll('line');
+            const nodes = dagG.select('.dag-nodes').selectAll('circle');
+
+            // Reset all to dim
+            nodes.attr('opacity', 0.2);
+            edges.attr('stroke-opacity', 0.05).attr('marker-end', 'url(#dag-arrow-default)');
+
+            function wave(nodeId, delay) {
+                if (visited.has(nodeId)) return;
+                visited.add(nodeId);
+
+                setTimeout(() => {
+                    // Flash node
+                    nodes.filter(d => d.id === nodeId)
+                        .attr('opacity', 1)
+                        .transition().duration(300)
+                        .attr('r', d => (8 + d.risk_score / 10) * 1.6)
+                        .attr('fill', DAG_COLORS.cascade)
+                        .transition().duration(500)
+                        .attr('r', d => 8 + d.risk_score / 10)
+                        .attr('fill', d => d.status === 'critical' ? DAG_COLORS.critical : d.status === 'warning' ? DAG_COLORS.warning : DAG_COLORS.monitoring);
+
+                    // Find outgoing edges and animate them
+                    edges.each(function(d) {
+                        const sid = d.source.id || d.source;
+                        const tid = d.target.id || d.target;
+                        if (sid === nodeId && !visited.has(tid)) {
+                            d3.select(this)
+                                .transition().duration(400).delay(200)
+                                .attr('stroke', DAG_COLORS.cascade)
+                                .attr('stroke-opacity', 0.9)
+                                .attr('marker-end', 'url(#dag-arrow-cascade)')
+                                .transition().duration(600)
+                                .attr('stroke', DAG_COLORS.edge)
+                                .attr('stroke-opacity', 0.5);
+
+                            // Continue cascade to target
+                            wave(tid, delay + 600);
+                        }
+                    });
+                }, delay);
+            }
+
+            wave(startId, 0);
+
+            // Reset after cascade completes
+            setTimeout(() => {
+                nodes.attr('opacity', 1);
+                edges.attr('stroke-opacity', d => 0.35 + (parseFloat(d.weight) || 0.5) * 0.35)
+                    .attr('stroke', DAG_COLORS.edge)
+                    .attr('marker-end', 'url(#dag-arrow-default)');
+            }, visited.size * 800 + 2000);
+        }
+
+        function updateDAGLegend(nodes, edges) {
+            const legend = document.getElementById('dagLegend');
+            if (!legend) return;
+            const critical = nodes.filter(n => n.status === 'critical').length;
+            const warning = nodes.filter(n => n.status === 'warning').length;
+            const monitoring = nodes.filter(n => n.status === 'monitoring').length;
+            legend.innerHTML = `
+                <div class="dag-legend-item"><div class="dag-legend-dot" style="background:${DAG_COLORS.critical}"></div> Critical (${critical})</div>
+                <div class="dag-legend-item"><div class="dag-legend-dot" style="background:${DAG_COLORS.warning}"></div> Warning (${warning})</div>
+                <div class="dag-legend-item"><div class="dag-legend-dot" style="background:${DAG_COLORS.monitoring}"></div> Monitoring (${monitoring})</div>
+                <div class="dag-legend-item"><div class="dag-legend-line" style="background:${DAG_COLORS.edge}"></div> Contagion Path (${edges.length})</div>
+                <div class="dag-legend-item"><span style="color:#ff6b6b;">→</span> Outgoing Risk</div>
+                <div class="dag-legend-item"><span style="color:#00d9ff;">→</span> Incoming Vulnerability</div>
+            `;
+        }
+
+        function updateCascadeInfo() {
+            const info = document.getElementById('dagCascadeInfo');
+            if (!info || !state.cascadeProbs || !state.cascadeProbs.length) { if (info) info.style.display = 'none'; return; }
+            info.style.display = 'block';
+            const top3 = state.cascadeProbs.slice(0, 3);
+            info.innerHTML = '<strong>Top Cascade Paths</strong>' + top3.map(p =>
+                `<div class="dag-cascade-path">${p.path.map(c => `<span>${COUNTRY_NAMES[c] || c}</span>`).join('<span class="dag-cascade-arrow"> → </span>')} <span style="color:#ffd700;margin-left:0.5rem;">${(parseFloat(p.cumulative_probability) * 100).toFixed(0)}%</span></div>`
+            ).join('');
+        }
+
+        // Hook into WebSocket: render DAG when network_data arrives
+        // (The updateDashboard function already dispatches to panel-specific handlers;
+        //  we'll also check on each sovereign risk update)
+        const origUpdateCountryRisks = updateCountryRisks;
+        // Enhance: after country risks update, also render DAG if network data exists
+        // Network data comes separately from risk_scores; handled in updateDashboard
     </script>
 
     <!-- EV5: Country Drill-Down Panel -->

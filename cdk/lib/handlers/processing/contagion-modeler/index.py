@@ -169,8 +169,12 @@ def write_risk_scores_to_state(risk_scores: dict, timestamp: str) -> None:
         raise
 
 
-def compute_network_data(country_scores: dict) -> dict:
-    """Compute adjacency matrix and node list for network visualization (EV5-03)."""
+def compute_network_data(country_scores: dict, all_indicators: dict = None) -> dict:
+    """Compute directed adjacency graph for network visualization (EV5-03 + EV7-DAG).
+
+    Edges are directional: higher risk → lower risk (contagion flows from stressed economies).
+    Nodes include vulnerability_score derived from GNI and Gini indicators.
+    """
     regions = {
         'latam': ['ARG', 'BRA', 'MEX'],
         'mideast_africa': ['TUR', 'EGY', 'NGA', 'ZAF'],
@@ -183,37 +187,133 @@ def compute_network_data(country_scores: dict) -> dict:
         'ZAF': 'South Africa', 'MEX': 'Mexico', 'IDN': 'Indonesia', 'IND': 'India'
     }
 
-    # Build nodes
+    # Build nodes with vulnerability scoring
     nodes = []
     for code, score in country_scores.items():
         region = next((r for r, cs in regions.items() if code in cs), 'other')
+
+        # Vulnerability score: how susceptible to incoming contagion (GNI + Gini)
+        vulnerability = Decimal('50')  # default
+        if all_indicators and code in all_indicators:
+            ind = all_indicators[code]
+            gni = float(ind.get('gni_signal') or 50)
+            gini = float(ind.get('gini_signal') or 50)
+            vulnerability = Decimal(str(round((gni * 0.5 + gini * 0.5), 1)))
+
         nodes.append({
             'id': code,
             'name': country_names.get(code, code),
             'risk_score': Decimal(str(round(score, 2))),
+            'vulnerability_score': vulnerability,
             'region': region,
             'status': 'critical' if score > 70 else 'warning' if score > 50 else 'monitoring'
         })
 
-    # Build edges (weighted by score similarity within regions)
+    # Build DIRECTED edges: higher risk → lower risk within regions
     edges = []
     for region, countries in regions.items():
         region_countries = [c for c in countries if c in country_scores]
         for i, c1 in enumerate(region_countries):
             for c2 in region_countries[i + 1:]:
                 s1, s2 = country_scores[c1], country_scores[c2]
-                # Correlation strength: higher when both are high-risk
+
+                # Direction: higher risk is source (contagion origin)
+                if s1 >= s2:
+                    source, target = c1, c2
+                    source_risk, target_risk = s1, s2
+                else:
+                    source, target = c2, c1
+                    source_risk, target_risk = s2, s1
+
+                # Propagation strength = base correlation * risk differential multiplier
                 avg_risk = (s1 + s2) / 2
-                correlation = min(1.0, avg_risk / 100 * 1.3)  # Scale up slightly
-                if correlation > 0.2:
+                base_correlation = min(1.0, avg_risk / 100 * 1.3)
+                risk_delta = abs(s1 - s2)
+                propagation_strength = min(1.0, base_correlation * (1.0 + risk_delta / 100))
+
+                if propagation_strength > 0.2:
                     edges.append({
-                        'source': c1,
-                        'target': c2,
-                        'weight': Decimal(str(round(correlation, 3))),
+                        'source': source,
+                        'target': target,
+                        'weight': Decimal(str(round(propagation_strength, 3))),
                         'region': region,
+                        'source_risk': Decimal(str(round(source_risk, 2))),
+                        'target_risk': Decimal(str(round(target_risk, 2))),
+                        'risk_delta': Decimal(str(round(risk_delta, 2))),
                     })
 
+    # Also add cross-regional edges for high-risk countries (risk > 60)
+    high_risk_countries = [c for c, s in country_scores.items() if s > 60]
+    for i, c1 in enumerate(high_risk_countries):
+        for c2 in high_risk_countries[i + 1:]:
+            # Check they're in different regions
+            r1 = next((r for r, cs in regions.items() if c1 in cs), 'other')
+            r2 = next((r for r, cs in regions.items() if c2 in cs), 'other')
+            if r1 == r2:
+                continue
+            s1, s2 = country_scores[c1], country_scores[c2]
+            if s1 >= s2:
+                source, target = c1, c2
+                source_risk, target_risk = s1, s2
+            else:
+                source, target = c2, c1
+                source_risk, target_risk = s2, s1
+
+            # Cross-regional edges are weaker (0.5x multiplier)
+            avg_risk = (s1 + s2) / 2
+            cross_weight = min(1.0, (avg_risk / 100 * 1.3) * 0.5)
+            if cross_weight > 0.25:
+                edges.append({
+                    'source': source,
+                    'target': target,
+                    'weight': Decimal(str(round(cross_weight, 3))),
+                    'region': 'cross_regional',
+                    'source_risk': Decimal(str(round(source_risk, 2))),
+                    'target_risk': Decimal(str(round(target_risk, 2))),
+                    'risk_delta': Decimal(str(round(abs(s1 - s2), 2))),
+                })
+
     return {'nodes': nodes, 'edges': edges}
+
+
+def compute_cascade_probabilities(edges: list, country_scores: dict) -> dict:
+    """Compute multi-hop cascade paths and their cumulative probabilities (EV7-DAG)."""
+    # Build directed adjacency list
+    graph = defaultdict(list)
+    for edge in edges:
+        src = edge.get('source', '')
+        tgt = edge.get('target', '')
+        w = float(edge.get('weight', 0))
+        if src and tgt and w > 0:
+            graph[src].append({'target': tgt, 'weight': w})
+
+    paths = []
+    # Find cascade paths from high-risk sources (risk > 55)
+    for code, score in country_scores.items():
+        if score > 55:
+            _dfs_cascade(graph, code, [code], 1.0, paths, max_depth=3)
+
+    # Sort by probability descending, take top 10
+    paths.sort(key=lambda p: float(p['cumulative_probability']), reverse=True)
+    return {'paths': paths[:10]}
+
+
+def _dfs_cascade(graph, node, path, cum_prob, results, max_depth):
+    """DFS to find cascade paths with cumulative probability."""
+    if len(path) > max_depth:
+        return
+    for neighbor in graph.get(node, []):
+        tgt = neighbor['target']
+        if tgt not in path:
+            new_prob = cum_prob * neighbor['weight']
+            new_path = path + [tgt]
+            if new_prob > 0.15 and len(new_path) >= 2:  # Only significant paths
+                results.append({
+                    'path': new_path,
+                    'cumulative_probability': Decimal(str(round(new_prob, 3))),
+                    'length': len(new_path)
+                })
+            _dfs_cascade(graph, tgt, new_path, new_prob, results, max_depth)
 
 
 def write_network_data_to_state(network_data: dict, timestamp: str) -> None:
@@ -303,14 +403,34 @@ def lambda_handler(event, context):
         logger.info("Computing contagion paths")
         contagion_data = compute_regional_correlations(risk_scores)
 
-        # Compute network data for visualization (EV5-03)
-        logger.info("Computing network data")
-        network_data = compute_network_data(risk_scores)
+        # Compute directed network data for DAG visualization (EV5-03 + EV7-DAG)
+        logger.info("Computing directed network data with vulnerability scores")
+        network_data = compute_network_data(risk_scores, all_indicators)
+
+        # Compute cascade probabilities for multi-hop contagion paths (EV7-DAG)
+        logger.info("Computing cascade probabilities")
+        cascade_data = compute_cascade_probabilities(network_data['edges'], risk_scores)
+        logger.info(f"Found {len(cascade_data['paths'])} significant cascade paths")
 
         # Write to state tables
         write_risk_scores_to_state(risk_scores, timestamp)
         write_contagion_paths_to_state(contagion_data, timestamp)
         write_network_data_to_state(network_data, timestamp)
+
+        # Write cascade probabilities
+        try:
+            table = dynamodb.Table(DASHBOARD_STATE_TABLE)
+            table.put_item(Item={
+                'dashboard': 'sovereign_dominoes',
+                'panel': 'cascade_probabilities',
+                'paths': cascade_data['paths'],
+                'path_count': len(cascade_data['paths']),
+                'timestamp': timestamp,
+                'last_updated': datetime.utcnow().isoformat()
+            })
+            logger.info(f"Wrote {len(cascade_data['paths'])} cascade probability paths")
+        except Exception as e:
+            logger.error(f"Error writing cascade probabilities: {e}")
 
         # Publish event
         publish_event(risk_scores, len(contagion_data['contagion_paths']), timestamp)
@@ -320,7 +440,10 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'message': 'Contagion modeling completed',
                 'countries_analyzed': len(risk_scores),
-                'contagion_paths': len(contagion_data['contagion_paths'])
+                'contagion_paths': len(contagion_data['contagion_paths']),
+                'cascade_paths': len(cascade_data['paths']),
+                'network_nodes': len(network_data['nodes']),
+                'network_edges': len(network_data['edges'])
             })
         }
 
