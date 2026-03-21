@@ -2057,8 +2057,8 @@
             const urls = HISTORY_API_BASE
                 ? [`${HISTORY_API_BASE}/api/history?${params}`]
                 : [
-                    // Try the REST API created by deploy script
-                    `https://g91wyyvc0m.execute-api.us-east-1.amazonaws.com/prod/api/history?${params}`,
+                    // REST API Gateway for history endpoints
+                    `https://txvfllfypa.execute-api.us-east-1.amazonaws.com/prod/api/history?${params}`,
                 ];
 
             for (const url of urls) {
