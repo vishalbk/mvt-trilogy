@@ -169,6 +169,72 @@ def write_risk_scores_to_state(risk_scores: dict, timestamp: str) -> None:
         raise
 
 
+def compute_network_data(country_scores: dict) -> dict:
+    """Compute adjacency matrix and node list for network visualization (EV5-03)."""
+    regions = {
+        'latam': ['ARG', 'BRA', 'MEX'],
+        'mideast_africa': ['TUR', 'EGY', 'NGA', 'ZAF'],
+        'asia': ['PAK', 'IDN', 'IND']
+    }
+
+    country_names = {
+        'ARG': 'Argentina', 'BRA': 'Brazil', 'TUR': 'Turkey',
+        'EGY': 'Egypt', 'PAK': 'Pakistan', 'NGA': 'Nigeria',
+        'ZAF': 'South Africa', 'MEX': 'Mexico', 'IDN': 'Indonesia', 'IND': 'India'
+    }
+
+    # Build nodes
+    nodes = []
+    for code, score in country_scores.items():
+        region = next((r for r, cs in regions.items() if code in cs), 'other')
+        nodes.append({
+            'id': code,
+            'name': country_names.get(code, code),
+            'risk_score': Decimal(str(round(score, 2))),
+            'region': region,
+            'status': 'critical' if score > 70 else 'warning' if score > 50 else 'monitoring'
+        })
+
+    # Build edges (weighted by score similarity within regions)
+    edges = []
+    for region, countries in regions.items():
+        region_countries = [c for c in countries if c in country_scores]
+        for i, c1 in enumerate(region_countries):
+            for c2 in region_countries[i + 1:]:
+                s1, s2 = country_scores[c1], country_scores[c2]
+                # Correlation strength: higher when both are high-risk
+                avg_risk = (s1 + s2) / 2
+                correlation = min(1.0, avg_risk / 100 * 1.3)  # Scale up slightly
+                if correlation > 0.2:
+                    edges.append({
+                        'source': c1,
+                        'target': c2,
+                        'weight': Decimal(str(round(correlation, 3))),
+                        'region': region,
+                    })
+
+    return {'nodes': nodes, 'edges': edges}
+
+
+def write_network_data_to_state(network_data: dict, timestamp: str) -> None:
+    """Write network visualization data to dashboard-state (EV5-03)."""
+    table = dynamodb.Table(DASHBOARD_STATE_TABLE)
+    try:
+        table.put_item(Item={
+            'dashboard': 'sovereign_dominoes',
+            'panel': 'network_data',
+            'nodes': network_data['nodes'],
+            'edges': network_data['edges'],
+            'node_count': len(network_data['nodes']),
+            'edge_count': len(network_data['edges']),
+            'timestamp': timestamp,
+            'last_updated': datetime.utcnow().isoformat()
+        })
+        logger.info(f"Wrote network data: {len(network_data['nodes'])} nodes, {len(network_data['edges'])} edges")
+    except Exception as e:
+        logger.error(f"Error writing network data: {e}")
+
+
 def write_contagion_paths_to_state(contagion_data: dict, timestamp: str) -> None:
     """Write contagion paths to dashboard state table."""
     table = dynamodb.Table(DASHBOARD_STATE_TABLE)
@@ -237,9 +303,14 @@ def lambda_handler(event, context):
         logger.info("Computing contagion paths")
         contagion_data = compute_regional_correlations(risk_scores)
 
+        # Compute network data for visualization (EV5-03)
+        logger.info("Computing network data")
+        network_data = compute_network_data(risk_scores)
+
         # Write to state tables
         write_risk_scores_to_state(risk_scores, timestamp)
         write_contagion_paths_to_state(contagion_data, timestamp)
+        write_network_data_to_state(network_data, timestamp)
 
         # Publish event
         publish_event(risk_scores, len(contagion_data['contagion_paths']), timestamp)

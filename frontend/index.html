@@ -1010,6 +1010,190 @@
         .kpi-trend-arrow.up { color: #ff4444; }
         .kpi-trend-arrow.down { color: #00ff41; }
         .kpi-trend-arrow.stable { color: #888; }
+
+        /* === EV5: Notification Bell === */
+        .notif-bell {
+            position: relative;
+            cursor: pointer;
+            padding: 0.4rem;
+            font-size: 1.2rem;
+            color: #888;
+            transition: color 0.2s;
+        }
+        .notif-bell:hover { color: #00d9ff; }
+        .notif-bell .badge {
+            position: absolute;
+            top: -2px;
+            right: -4px;
+            background: #ff4444;
+            color: #fff;
+            border-radius: 50%;
+            font-size: 0.6rem;
+            min-width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+        .notif-bell .badge.hidden { display: none; }
+        .notif-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 320px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            z-index: 200;
+        }
+        .notif-dropdown.open { display: block; }
+        .notif-dropdown-header {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #1e2749;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .notif-dismiss-btn {
+            background: none;
+            border: none;
+            color: #00d9ff;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+        .notif-item {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #0f1229;
+            font-size: 0.8rem;
+        }
+        .notif-item.unread { background: #0f1229; }
+        .notif-item .notif-title { font-weight: 600; margin-bottom: 2px; }
+        .notif-item .notif-title.critical { color: #ff4444; }
+        .notif-item .notif-title.warning { color: #ffd700; }
+        .notif-item .notif-time { color: #555; font-size: 0.7rem; }
+        .notif-empty { padding: 1.5rem; text-align: center; color: #555; font-size: 0.8rem; }
+
+        /* === EV5: Toast Notifications === */
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 500;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-width: 360px;
+        }
+        .toast {
+            background: #141829;
+            border: 1px solid #1e2749;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            animation: toastSlideIn 0.3s ease;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+        .toast.critical { border-left: 3px solid #ff4444; }
+        .toast.warning { border-left: 3px solid #ffd700; }
+        .toast.info { border-left: 3px solid #00d9ff; }
+        .toast-icon { font-size: 1.2rem; flex-shrink: 0; }
+        .toast-body { flex: 1; }
+        .toast-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 2px; }
+        .toast-msg { font-size: 0.75rem; color: #888; }
+        .toast-close {
+            background: none;
+            border: none;
+            color: #555;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0;
+            line-height: 1;
+        }
+        @keyframes toastSlideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* === EV5: Country Drill-Down Panel === */
+        .country-drilldown {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 420px;
+            height: 100vh;
+            background: #0f1229;
+            border-left: 1px solid #1e2749;
+            box-shadow: -8px 0 24px rgba(0,0,0,0.4);
+            z-index: 300;
+            overflow-y: auto;
+            animation: slideIn 0.3s ease;
+        }
+        .country-drilldown.open { display: block; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        .drilldown-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #1e2749;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .drilldown-header h2 { font-size: 1.1rem; font-weight: 700; }
+        .drilldown-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .drilldown-section {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid #0f1229;
+        }
+        .drilldown-section h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: #666;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.75rem;
+        }
+        .indicator-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            font-size: 0.85rem;
+        }
+        .indicator-row .label { color: #999; }
+        .indicator-row .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        /* === EV5: Export Button === */
+        .export-btn {
+            background: #1e2749;
+            border: 1px solid #2d3a66;
+            color: #888;
+            border-radius: 6px;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .export-btn:hover { background: #2d3a66; color: #00d9ff; }
+
+        /* Country row clickable */
+        .country-row { cursor: pointer; transition: background 0.2s; }
+        .country-row:hover { background: #1e274922; }
     </style>
 </head>
 <body>
@@ -1022,6 +1206,20 @@
             </div>
         </div>
         <div class="header-right">
+            <!-- EV5: Notification Bell -->
+            <div class="notif-bell" id="notifBell" onclick="toggleNotifDropdown()">
+                🔔
+                <span class="badge hidden" id="notifBadge">0</span>
+                <div class="notif-dropdown" id="notifDropdown">
+                    <div class="notif-dropdown-header">
+                        <span>Notifications</span>
+                        <button class="notif-dismiss-btn" onclick="dismissAllNotifications(event)">Dismiss All</button>
+                    </div>
+                    <div id="notifList">
+                        <div class="notif-empty">No notifications</div>
+                    </div>
+                </div>
+            </div>
             <div class="timestamp">Updated: <span id="lastUpdate">--:--:--</span></div>
             <div class="auth-user-menu" id="authUserMenu">
                 <!-- Logged out state -->
@@ -1039,6 +1237,9 @@
     <div class="connection-banner" id="connectionBanner">
         WebSocket disconnected. Attempting to reconnect... Data may be stale.
     </div>
+
+    <!-- EV5: Toast Notification Container -->
+    <div class="toast-container" id="toastContainer"></div>
 
     <div class="tabs">
         <button class="tab-btn active" data-tab="overview">Overview</button>
@@ -1193,10 +1394,10 @@
             </div>
 
             <div class="country-list">
-                <div class="country-header">
+                <div class="country-header" style="position:relative;">
                     <div>Country</div>
                     <div>Risk Score</div>
-                    <div>Status</div>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">Status <button class="export-btn" onclick="exportData('sovereign','csv')">CSV</button><button class="export-btn" onclick="exportData('sovereign','json')">JSON</button></div>
                 </div>
                 <div id="countryRiskList">
                     <div class="signal-empty" style="grid-column: 1/-1;">Waiting for data...</div>
@@ -1795,6 +1996,12 @@
                             status: Number(score) > 70 ? 'Critical' : Number(score) > 50 ? 'Warning' : 'Monitoring'
                         })).sort((a, b) => b.risk_score - a.risk_score);
                         updateCountryRisks({ countries });
+
+                        // EV5: Toast for critical countries
+                        const critical = countries.filter(c => c.status === 'Critical');
+                        if (critical.length > 0) {
+                            showToast('Sovereign Alert', `${critical.length} countries at critical risk: ${critical.map(c => c.name).join(', ')}`, 'critical');
+                        }
                     }
                     addSignal({
                         signal_id: 'sovereign_risk',
@@ -1896,18 +2103,22 @@
 
         function updateOverviewKPIs(data) {
             if (data.distress_index !== undefined) {
+                updateKpiTrendArrow('distress', data.distress_index);
                 document.getElementById('distressIndex').textContent = formatValue(data.distress_index);
                 state.kpis.distressIndex = data.distress_index;
             }
             if (data.trigger_probability !== undefined) {
+                updateKpiTrendArrow('trigger', data.trigger_probability);
                 document.getElementById('triggerProb').textContent = formatValue(data.trigger_probability);
                 state.kpis.triggerProb = data.trigger_probability;
             }
             if (data.contagion_risk !== undefined) {
+                updateKpiTrendArrow('contagion', data.contagion_risk);
                 document.getElementById('contagionRisk').textContent = formatValue(data.contagion_risk);
                 state.kpis.contagionRisk = data.contagion_risk;
             }
             if (data.vix_level !== undefined) {
+                updateKpiTrendArrow('vix', data.vix_level);
                 document.getElementById('vixLevel').textContent = formatValue(data.vix_level);
                 state.kpis.vixLevel = data.vix_level;
             }
@@ -1946,13 +2157,14 @@
 
         function updateCountryRisks(data) {
             if (!data.countries) return;
+            state.countryData = data.countries; // EV5: Store for export/drilldown
             const container = document.getElementById('countryRiskList');
             container.innerHTML = data.countries.map(country => {
                 const riskClass = country.risk_score > 70 ? 'high' : country.risk_score > 40 ? 'medium' : 'low';
                 return `
-                    <div class="country-row">
+                    <div class="country-row" onclick="openCountryDrilldown('${country.name}')">
                         <div class="country-name">${country.name}</div>
-                        <div class="risk-score ${riskClass}">${country.risk_score}</div>
+                        <div class="risk-score ${riskClass}">${country.risk_score.toFixed(1)}</div>
                         <div>${country.status || 'Monitoring'}</div>
                     </div>
                 `;
@@ -2855,6 +3067,317 @@
         };
         // === End Auth UI ===
 
+        // ==========================================
+        // === EV5: Toast Notification System ===
+        // ==========================================
+        function showToast(title, message, severity = 'info') {
+            const container = document.getElementById('toastContainer');
+            const icons = { critical: '🚨', warning: '⚠️', info: 'ℹ️' };
+            const toast = document.createElement('div');
+            toast.className = `toast ${severity}`;
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[severity] || icons.info}</span>
+                <div class="toast-body">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-msg">${message}</div>
+                </div>
+                <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => { if (toast.parentElement) toast.remove(); }, 8000);
+        }
+
+        // ==========================================
+        // === EV5: Notification Bell ===
+        // ==========================================
+        let notificationsCache = [];
+
+        function toggleNotifDropdown() {
+            const dd = document.getElementById('notifDropdown');
+            dd.classList.toggle('open');
+            if (dd.classList.contains('open')) fetchNotifications();
+        }
+
+        document.addEventListener('click', (e) => {
+            const bell = document.getElementById('notifBell');
+            if (bell && !bell.contains(e.target)) {
+                document.getElementById('notifDropdown').classList.remove('open');
+            }
+        });
+
+        async function fetchNotifications() {
+            try {
+                const resp = await fetch('https://txvfllfypa.execute-api.us-east-1.amazonaws.com/prod/api/notifications');
+                if (!resp.ok) throw new Error('Failed');
+                const data = await resp.json();
+                notificationsCache = data.notifications || [];
+                renderNotifications(notificationsCache);
+                updateNotifBadge(data.unread_count || 0);
+            } catch (e) {
+                console.warn('Notification fetch failed:', e);
+                // Generate local threshold notifications as fallback
+                generateLocalNotifications();
+            }
+        }
+
+        function generateLocalNotifications() {
+            const notifs = [];
+            const thresholds = {
+                distressIndex: { warning: 30, critical: 50, label: 'Distress Index' },
+                triggerProb: { warning: 15, critical: 25, label: 'Trigger Probability' },
+                contagionRisk: { warning: 60, critical: 75, label: 'Contagion Risk' },
+                vixLevel: { warning: 25, critical: 35, label: 'VIX Level' }
+            };
+            for (const [key, t] of Object.entries(thresholds)) {
+                const val = state.kpis[key];
+                if (val === undefined) continue;
+                if (val >= t.critical) {
+                    notifs.push({ id: key, severity: 'critical', title: `${t.label} CRITICAL`, message: `${t.label} at ${val.toFixed(2)} exceeds ${t.critical}`, read: false, timestamp: new Date().toISOString() });
+                } else if (val >= t.warning) {
+                    notifs.push({ id: key, severity: 'warning', title: `${t.label} Warning`, message: `${t.label} at ${val.toFixed(2)} exceeds ${t.warning}`, read: false, timestamp: new Date().toISOString() });
+                }
+            }
+            notificationsCache = notifs;
+            renderNotifications(notifs);
+            updateNotifBadge(notifs.filter(n => !n.read).length);
+        }
+
+        function renderNotifications(notifs) {
+            const list = document.getElementById('notifList');
+            if (!notifs.length) {
+                list.innerHTML = '<div class="notif-empty">No notifications</div>';
+                return;
+            }
+            list.innerHTML = notifs.map(n => `
+                <div class="notif-item ${n.read ? '' : 'unread'}" onclick="markNotifRead('${n.id}', this)">
+                    <div class="notif-title ${n.severity}">${n.title}</div>
+                    <div>${n.message}</div>
+                    <div class="notif-time">${new Date(n.timestamp).toLocaleString()}</div>
+                </div>
+            `).join('');
+        }
+
+        function updateNotifBadge(count) {
+            const badge = document.getElementById('notifBadge');
+            badge.textContent = count;
+            badge.classList.toggle('hidden', count === 0);
+        }
+
+        async function markNotifRead(id, el) {
+            if (el) el.classList.remove('unread');
+            try {
+                await fetch(`https://txvfllfypa.execute-api.us-east-1.amazonaws.com/prod/api/notifications/${id}/read`, { method: 'PUT' });
+            } catch (e) { /* fallback: local only */ }
+            const unread = document.querySelectorAll('.notif-item.unread').length;
+            updateNotifBadge(unread);
+        }
+
+        async function dismissAllNotifications(e) {
+            e.stopPropagation();
+            try {
+                await fetch('https://txvfllfypa.execute-api.us-east-1.amazonaws.com/prod/api/notifications/dismiss-all', { method: 'POST' });
+            } catch (e) { /* local fallback */ }
+            document.querySelectorAll('.notif-item').forEach(el => el.classList.remove('unread'));
+            updateNotifBadge(0);
+        }
+
+        // ==========================================
+        // === EV5: Country Drill-Down Panel ===
+        // ==========================================
+        const COUNTRY_NAMES = {
+            'ARG': 'Argentina', 'BRA': 'Brazil', 'TUR': 'Turkey',
+            'EGY': 'Egypt', 'PAK': 'Pakistan', 'NGA': 'Nigeria',
+            'ZAF': 'South Africa', 'MEX': 'Mexico', 'IDN': 'Indonesia', 'IND': 'India'
+        };
+
+        async function openCountryDrilldown(countryCode) {
+            const panel = document.getElementById('countryDrilldown');
+            const title = document.getElementById('drilldownTitle');
+            title.textContent = COUNTRY_NAMES[countryCode] || countryCode;
+            panel.classList.add('open');
+
+            // Set basic data from state
+            const countryInfo = (state.countryData || []).find(c => c.name === countryCode);
+            if (countryInfo) {
+                document.getElementById('drilldownRiskScore').textContent = countryInfo.risk_score.toFixed(1);
+                const statusEl = document.getElementById('drilldownStatus');
+                statusEl.textContent = countryInfo.status;
+                statusEl.style.color = countryInfo.status === 'Critical' ? '#ff4444' : countryInfo.status === 'Warning' ? '#ffd700' : '#00ff41';
+            }
+
+            // Fetch detailed data from country API
+            try {
+                const resp = await fetch(`https://txvfllfypa.execute-api.us-east-1.amazonaws.com/prod/api/country/${countryCode}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    renderDrilldownIndicators(data.indicators || {});
+                    renderDrilldownContagion(data.contagion_paths || []);
+                    renderDrilldownChart(data.history || []);
+                } else {
+                    document.getElementById('drilldownIndicators').innerHTML = '<div style="color:#555;font-size:0.8rem;">API unavailable</div>';
+                }
+            } catch (e) {
+                console.warn('Country API fetch failed:', e);
+                document.getElementById('drilldownIndicators').innerHTML = '<div style="color:#555;font-size:0.8rem;">Could not load details</div>';
+            }
+        }
+
+        function renderDrilldownIndicators(indicators) {
+            const el = document.getElementById('drilldownIndicators');
+            const entries = Object.values(indicators);
+            if (!entries.length) {
+                el.innerHTML = '<div style="color:#555;font-size:0.8rem;">No indicator data</div>';
+                return;
+            }
+            el.innerHTML = entries.map(ind => `
+                <div class="indicator-row">
+                    <span class="label">${ind.name || ind.code}</span>
+                    <span class="val">${ind.raw_value !== undefined ? ind.raw_value.toLocaleString() : '--'} ${ind.unit || ''}</span>
+                </div>
+                <div class="indicator-row" style="padding-top:0;">
+                    <span class="label" style="font-size:0.7rem;">Signal Score</span>
+                    <span class="val" style="font-size:0.75rem; color:${ind.signal_value > 70 ? '#ff4444' : ind.signal_value > 50 ? '#ffd700' : '#00ff41'}">${ind.signal_value?.toFixed(1) || '--'}/100</span>
+                </div>
+            `).join('');
+        }
+
+        function renderDrilldownContagion(paths) {
+            const el = document.getElementById('drilldownContagion');
+            if (!paths.length) {
+                el.innerHTML = '<div style="color:#555;font-size:0.8rem;">No active contagion paths</div>';
+                return;
+            }
+            el.innerHTML = paths.map(p => `
+                <div class="indicator-row">
+                    <span class="label">${COUNTRY_NAMES[p.source] || p.source} → ${COUNTRY_NAMES[p.target] || p.target}</span>
+                    <span class="val" style="color:#ffd700;">${p.region || ''}</span>
+                </div>
+            `).join('');
+        }
+
+        let drilldownChartInstance = null;
+        function renderDrilldownChart(history) {
+            const ctx = document.getElementById('drilldownChart');
+            if (!ctx) return;
+            if (drilldownChartInstance) drilldownChartInstance.destroy();
+            if (!history.length) return;
+
+            drilldownChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(h => {
+                        const d = new Date(h.timestamp);
+                        return `${d.getMonth()+1}/${d.getDate()}`;
+                    }),
+                    datasets: [{
+                        label: 'Signal Value',
+                        data: history.map(h => h.value),
+                        borderColor: '#00d9ff',
+                        backgroundColor: 'rgba(0,217,255,0.05)',
+                        borderWidth: 1.5,
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { grid: { color: '#1e2749' }, ticks: { color: '#666', font: { size: 10 } } },
+                        x: { grid: { display: false }, ticks: { color: '#666', font: { size: 9 }, maxTicksLimit: 8 } }
+                    }
+                }
+            });
+        }
+
+        function closeCountryDrilldown() {
+            document.getElementById('countryDrilldown').classList.remove('open');
+            if (drilldownChartInstance) { drilldownChartInstance.destroy(); drilldownChartInstance = null; }
+        }
+
+        // ==========================================
+        // === EV5: Data Export ===
+        // ==========================================
+        function exportData(tab, format) {
+            let data, filename;
+            if (tab === 'sovereign') {
+                data = (state.countryData || []).map(c => ({
+                    country: COUNTRY_NAMES[c.name] || c.name,
+                    code: c.name,
+                    risk_score: c.risk_score,
+                    status: c.status
+                }));
+                filename = `mvt-sovereign-${new Date().toISOString().slice(0,10)}`;
+            } else if (tab === 'overview') {
+                data = [{
+                    distress_index: state.kpis.distressIndex,
+                    trigger_probability: state.kpis.triggerProb,
+                    contagion_risk: state.kpis.contagionRisk,
+                    vix_level: state.kpis.vixLevel,
+                    timestamp: new Date().toISOString()
+                }];
+                filename = `mvt-overview-${new Date().toISOString().slice(0,10)}`;
+            } else {
+                showToast('Export', 'No exportable data for this tab', 'info');
+                return;
+            }
+
+            if (format === 'json') {
+                downloadFile(JSON.stringify(data, null, 2), filename + '.json', 'application/json');
+            } else {
+                // CSV
+                if (!data.length) return;
+                const headers = Object.keys(data[0]);
+                const csv = [headers.join(','), ...data.map(row => headers.map(h => JSON.stringify(row[h] ?? '')).join(','))].join('\n');
+                downloadFile(csv, filename + '.csv', 'text/csv');
+            }
+            showToast('Export Complete', `${tab} data exported as ${format.toUpperCase()}`, 'info');
+        }
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ==========================================
+        // === EV5: KPI Trend Arrows ===
+        // ==========================================
+        const kpiPrevValues = {};
+
+        function updateKpiTrendArrow(elementId, newValue) {
+            const prev = kpiPrevValues[elementId];
+            kpiPrevValues[elementId] = newValue;
+            if (prev === undefined) return;
+
+            const changeEl = document.getElementById(elementId + 'Change') || document.getElementById(elementId.replace('kpi-', '') + 'Change');
+            if (!changeEl) return;
+
+            const diff = newValue - prev;
+            const pct = prev !== 0 ? ((diff / prev) * 100).toFixed(1) : '0.0';
+            if (Math.abs(diff) < 0.01) {
+                changeEl.innerHTML = '<span class="kpi-trend-arrow stable">→ 0.0%</span>';
+            } else if (diff > 0) {
+                changeEl.innerHTML = `<span class="kpi-trend-arrow up">↑ +${pct}%</span>`;
+            } else {
+                changeEl.innerHTML = `<span class="kpi-trend-arrow down">↓ ${pct}%</span>`;
+            }
+        }
+
+        // Hook trend arrows into existing KPI update flow
+        const origUpdateOverviewKPIs = typeof updateOverviewKPIs === 'function' ? updateOverviewKPIs : null;
+
+        // Periodically poll notifications
+        setInterval(fetchNotifications, 120000); // Every 2 minutes
+        // Initial fetch
+        setTimeout(fetchNotifications, 3000);
+
         // Initialize
         updateTimestamp();
         setInterval(updateTimestamp, 1000);
@@ -2864,6 +3387,43 @@
         // Refresh sparklines every 5 minutes
         setInterval(updateAllSparklines, 300000);
     </script>
+
+    <!-- EV5: Country Drill-Down Panel -->
+    <div class="country-drilldown" id="countryDrilldown">
+        <div class="drilldown-header">
+            <h2 id="drilldownTitle">Country Details</h2>
+            <button class="drilldown-close" onclick="closeCountryDrilldown()">&times;</button>
+        </div>
+        <div class="drilldown-section">
+            <h3>Risk Overview</h3>
+            <div class="indicator-row">
+                <span class="label">Risk Score</span>
+                <span class="val" id="drilldownRiskScore">--</span>
+            </div>
+            <div class="indicator-row">
+                <span class="label">Status</span>
+                <span class="val" id="drilldownStatus">--</span>
+            </div>
+        </div>
+        <div class="drilldown-section">
+            <h3>Economic Indicators</h3>
+            <div id="drilldownIndicators">
+                <div style="color:#555; font-size:0.8rem;">Loading...</div>
+            </div>
+        </div>
+        <div class="drilldown-section">
+            <h3>Contagion Paths</h3>
+            <div id="drilldownContagion">
+                <div style="color:#555; font-size:0.8rem;">Loading...</div>
+            </div>
+        </div>
+        <div class="drilldown-section">
+            <h3>30-Day History</h3>
+            <div style="height:160px;">
+                <canvas id="drilldownChart"></canvas>
+            </div>
+        </div>
+    </div>
 
     <!-- Auth Modal -->
     <div class="auth-modal-overlay" id="authModal">
