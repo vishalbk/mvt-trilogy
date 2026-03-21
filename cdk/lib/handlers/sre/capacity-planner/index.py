@@ -183,7 +183,7 @@ def handler(event, context):
         # Write per-table capacity to dashboard-state
         table.put_item(Item={
             'dashboard': 'sre_observatory',
-            'metric': f'capacity_{tbl_name}',
+            'panel': f'capacity_{tbl_name}',
             'table_name': tbl_name,
             'read_units_24h': Decimal(str(int(capacity['read_units']))),
             'write_units_24h': Decimal(str(int(capacity['write_units']))),
@@ -206,7 +206,7 @@ def handler(event, context):
 
     table.put_item(Item={
         'dashboard': 'sre_observatory',
-        'metric': 'lambda_concurrency',
+        'panel': 'lambda_concurrency',
         'max_concurrent_24h': Decimal(str(int(concurrency['max_concurrent']))),
         'avg_concurrent_24h': Decimal(str(round(concurrency['avg_concurrent'], 1))),
         'max_concurrent_7d': Decimal(str(int(concurrency_7d['max_concurrent']))),
@@ -221,7 +221,7 @@ def handler(event, context):
     try:
         cost_response = table.get_item(Key={
             'dashboard': 'sre_observatory',
-            'metric': 'cost_summary'
+            'panel': 'cost_summary'
         })
         daily_cost = float(cost_response['Item'].get('total_cost_24h', 0)) if 'Item' in cost_response else 0
     except Exception:
@@ -231,7 +231,7 @@ def handler(event, context):
 
     table.put_item(Item={
         'dashboard': 'sre_observatory',
-        'metric': 'cost_projections',
+        'panel': 'cost_projections',
         **{k: Decimal(str(v)) if isinstance(v, (int, float)) else v for k, v in projections.items()},
         'timestamp': now.isoformat(),
         'updated_at': now.isoformat()
@@ -243,7 +243,7 @@ def handler(event, context):
 
     summary = {
         'dashboard': 'sre_observatory',
-        'metric': 'capacity_summary',
+        'panel': 'capacity_summary',
         'dynamo_total_read_units_24h': Decimal(str(int(total_read_units))),
         'dynamo_total_write_units_24h': Decimal(str(int(total_write_units))),
         'dynamo_total_throttles_24h': Decimal(str(int(total_throttles))),

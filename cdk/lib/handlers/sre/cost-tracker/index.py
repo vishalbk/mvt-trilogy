@@ -318,7 +318,7 @@ def handler(event, context):
             # Write per-function cost to dashboard-state
             table.put_item(Item={
                 'dashboard': 'sre_observatory',
-                'metric': f'lambda_cost_{fn_name}',
+                'panel': f'lambda_cost_{fn_name}',
                 'function_name': fn_name,
                 'category': category,
                 'invocations_24h': Decimal(str(int(invocations_24h))),
@@ -343,13 +343,13 @@ def handler(event, context):
 
     summary = {
         'dashboard': 'sre_observatory',
-        'metric': 'cost_summary',
+        'panel': 'cost_summary',
         'total_cost_24h': Decimal(str(round(total_cost, 6))),
         'monthly_projected': Decimal(str(round(monthly_projected, 4))),
         'total_invocations_24h': Decimal(str(int(total_invocations))),
         'total_errors_24h': Decimal(str(int(total_errors))),
         'overall_error_rate': Decimal(str(round(overall_error_rate, 2))),
-        'group_costs': json.loads(json.dumps({k: round(v, 6) for k, v in group_costs.items()})),
+        'group_costs': {k: Decimal(str(round(v, 6))) for k, v in group_costs.items()},
         'function_count': Decimal(str(len(MVT_FUNCTIONS))),
         'functions_with_errors': Decimal(str(len([d for d in function_details if d['errors_24h'] > 0]))),
         'timestamp': now.isoformat(),
@@ -366,7 +366,7 @@ def handler(event, context):
 
         table.put_item(Item={
             'dashboard': 'sre_observatory',
-            'metric': f'group_{group}',
+            'panel': f'group_{group}',
             'group_name': group,
             'total_cost_24h': Decimal(str(round(cost, 6))),
             'function_count': Decimal(str(len(group_fns))),

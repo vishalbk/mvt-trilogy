@@ -44,7 +44,7 @@ def get_past_predictions(table, kpi, lookback_days=60):
     """
     try:
         response = table.query(
-            KeyConditionExpression=Key('dashboard').eq('predictions') & Key('component').eq(f'forecast_{kpi}'),
+            KeyConditionExpression=Key('dashboard').eq('predictions') & Key('panel').eq(f'forecast_{kpi}'),
             ScanIndexForward=True,
             Limit=500
         )
@@ -62,7 +62,7 @@ def get_actual_value_at_date(table, kpi, target_date):
     """
     try:
         response = table.query(
-            KeyConditionExpression=Key('dashboard').eq('overview') & Key('component').begins_with(kpi),
+            KeyConditionExpression=Key('dashboard').eq('overview') & Key('panel').begins_with(kpi),
             ScanIndexForward=False,
             Limit=100
         )
@@ -300,7 +300,7 @@ def handler(event, context):
     try:
         state_table.put_item(Item={
             'dashboard': 'predictions',
-            'component': 'backtest_results',
+            'panel': 'backtest_results',
             'payload': payload_safe,
             'updated_at': timestamp,
             'ttl': int((datetime.utcnow() + timedelta(days=90)).timestamp()),

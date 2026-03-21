@@ -260,7 +260,7 @@ def get_kpi_values(table, kpi, days=30):
     """
     try:
         response = table.query(
-            KeyConditionExpression=Key('dashboard').eq('overview') & Key('component').begins_with(kpi),
+            KeyConditionExpression=Key('dashboard').eq('overview') & Key('panel').begins_with(kpi),
             ScanIndexForward=True,
             Limit=500
         )
@@ -325,7 +325,7 @@ def handler(event, context):
     try:
         state_table.put_item(Item={
             'dashboard': 'predictions',
-            'component': 'anomaly_classifications',
+            'panel': 'anomaly_classifications',
             'payload': payload_safe,
             'updated_at': timestamp,
             'ttl': int((datetime.utcnow() + timedelta(days=30)).timestamp()),

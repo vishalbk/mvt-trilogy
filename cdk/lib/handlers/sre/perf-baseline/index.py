@@ -136,7 +136,7 @@ def handler(event, context):
             # Write per-function baseline to dashboard-state
             table.put_item(Item={
                 'dashboard': 'sre_observatory',
-                'metric': f'baseline_{fn_name}',
+                'panel': f'baseline_{fn_name}',
                 **{k: Decimal(str(v)) if isinstance(v, (int, float)) else v for k, v in baseline.items()},
                 'window_start': start.isoformat(),
                 'window_end': now.isoformat(),
@@ -158,7 +158,7 @@ def handler(event, context):
 
     summary = {
         'dashboard': 'sre_observatory',
-        'metric': 'perf_baseline_summary',
+        'panel': 'perf_baseline_summary',
         'functions_measured': Decimal(str(len(baselines))),
         'active_functions': Decimal(str(len(active_fns))),
         'fleet_p50_ms': Decimal(str(round(avg_p50, 1))),

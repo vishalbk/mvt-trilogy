@@ -56,7 +56,7 @@ def get_historical_values(table, kpi_name, days=90):
     """
     try:
         response = table.query(
-            KeyConditionExpression=Key('dashboard').eq('overview') & Key('component').begins_with(kpi_name),
+            KeyConditionExpression=Key('dashboard').eq('overview') & Key('panel').begins_with(kpi_name),
             ScanIndexForward=True,
             Limit=1000
         )
@@ -342,7 +342,7 @@ def handler(event, context):
     try:
         state_table.put_item(Item={
             'dashboard': 'predictions',
-            'component': 'kpi_forecasts',
+            'panel': 'kpi_forecasts',
             'payload': payload_safe,
             'updated_at': timestamp,
             'ttl': int((datetime.utcnow() + timedelta(days=30)).timestamp()),
@@ -358,7 +358,7 @@ def handler(event, context):
             try:
                 state_table.put_item(Item={
                     'dashboard': 'predictions',
-                    'component': f'forecast_{kpi}',
+                    'panel': f'forecast_{kpi}',
                     'payload': kpi_payload,
                     'updated_at': timestamp,
                     'ttl': int((datetime.utcnow() + timedelta(days=30)).timestamp()),

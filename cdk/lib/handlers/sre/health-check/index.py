@@ -410,10 +410,10 @@ def handler(event, context):
         table = dynamodb_resource.Table(DASHBOARD_STATE_TABLE)
         table.put_item(Item={
             'dashboard': 'sre_observatory',
-            'metric': 'health_status',
+            'panel': 'health_status',
             'overall_status': overall_status,
             'health_score': Decimal(str(health_score)),
-            'component_scores': json.loads(json.dumps(component_scores)),
+            'component_scores': {k: Decimal(str(round(v, 2))) for k, v in component_scores.items()},
             'timestamp': start_time.isoformat(),
             'updated_at': start_time.isoformat()
         })
@@ -435,7 +435,7 @@ def handler(event, context):
 
             table.put_item(Item={
                 'dashboard': 'sre_observatory',
-                'metric': f'health_{comp_name}',
+                'panel': f'health_{comp_name}',
                 'status': comp_status,
                 'score': Decimal(str(component_scores.get(comp_name.split('_')[0], 0))),
                 'timestamp': start_time.isoformat(),
