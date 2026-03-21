@@ -622,6 +622,108 @@
         .sector-grid::-webkit-scrollbar-thumb:hover {
             background: #2a3a5a;
         }
+
+        /* Predictions Tab (S6-03) */
+        .pred-model-banner {
+            background: linear-gradient(135deg, #0f1229 0%, #1a1f3d 100%);
+            border: 1px solid #1e2749;
+            border-radius: 12px;
+            padding: 1.2rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .pred-model-score { display: flex; align-items: center; gap: 1rem; }
+        .pred-model-score .pred-label { color: #888; font-size: 0.85rem; }
+        .pred-model-score .pred-value { font-size: 1.8rem; font-weight: 700; color: #00d9ff; }
+        .pred-model-meta { color: #666; font-size: 0.8rem; }
+        .pred-sep { margin: 0 0.5rem; }
+
+        .pred-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.2rem;
+            margin-bottom: 1.5rem;
+        }
+        @media (max-width: 900px) { .pred-grid { grid-template-columns: 1fr; } }
+
+        .pred-card {
+            background: #0f1229;
+            border: 1px solid #1e2749;
+            border-radius: 10px;
+            padding: 1.2rem;
+        }
+        .pred-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.8rem;
+        }
+        .pred-card-title { font-size: 1rem; font-weight: 600; color: #e0e6ed; }
+        .pred-trend {
+            font-size: 0.8rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .pred-trend.rising { background: #ff444422; color: #ff6b6b; }
+        .pred-trend.falling { background: #00ff4122; color: #00ff41; }
+        .pred-trend.stable { background: #ffaa0022; color: #ffd700; }
+
+        .pred-current {
+            display: flex;
+            align-items: baseline;
+            gap: 0.5rem;
+            margin-bottom: 0.8rem;
+        }
+        .pred-current .pred-label { color: #666; font-size: 0.75rem; }
+        .pred-current .pred-value { font-size: 1.5rem; font-weight: 700; color: #00d9ff; }
+
+        .pred-forecasts { display: flex; gap: 0.8rem; margin-bottom: 0.8rem; }
+        .pred-horizon {
+            flex: 1;
+            background: #0a0e27;
+            border-radius: 6px;
+            padding: 0.5rem 0.6rem;
+            text-align: center;
+        }
+        .pred-horizon-label { display: block; font-size: 0.65rem; color: #666; text-transform: uppercase; margin-bottom: 0.2rem; }
+        .pred-horizon-value { display: block; font-size: 1rem; font-weight: 600; color: #e0e6ed; }
+        .pred-ci { display: block; font-size: 0.6rem; color: #555; margin-top: 0.1rem; }
+
+        .pred-chart-wrap { height: 120px; }
+
+        .pred-section {
+            background: #0f1229;
+            border: 1px solid #1e2749;
+            border-radius: 10px;
+            padding: 1.2rem;
+            margin-bottom: 1.5rem;
+        }
+        .pred-section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #00d9ff;
+            margin-bottom: 1rem;
+        }
+
+        .pred-anomaly-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.8rem;
+        }
+        @media (max-width: 800px) { .pred-anomaly-grid { grid-template-columns: repeat(2, 1fr); } }
+
+        .pred-anomaly-card {
+            background: #0a0e27;
+            border-radius: 8px;
+            padding: 0.8rem;
+            text-align: center;
+        }
+        .pred-anomaly-kpi { display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.3rem; }
+        .pred-anomaly-type { display: block; font-size: 0.9rem; font-weight: 600; color: #e0e6ed; }
+        .pred-anomaly-conf { display: block; font-size: 0.65rem; color: #555; margin-top: 0.2rem; }
     </style>
 </head>
 <body>
@@ -648,6 +750,7 @@
         <button class="tab-btn" data-tab="sentiment">Sentiment Seismic</button>
         <button class="tab-btn" data-tab="sovereign">Sovereign Dominoes</button>
         <button class="tab-btn" data-tab="sre">SRE Observatory</button>
+        <button class="tab-btn" data-tab="predictions">Predictions</button>
     </div>
 
     <div class="container">
@@ -987,6 +1090,199 @@
                 </div>
             </div>
         </div>
+
+        <!-- Predictions Tab (S6-03) -->
+        <div id="predictions" class="tab-content">
+            <!-- Model Health Banner -->
+            <div class="pred-model-banner" id="predModelBanner">
+                <div class="pred-model-score">
+                    <span class="pred-label">Model Health</span>
+                    <span class="pred-value" id="predModelHealth">--</span>
+                </div>
+                <div class="pred-model-meta">
+                    <span id="predModelMethod">Ensemble ES+WMA v1</span>
+                    <span class="pred-sep">|</span>
+                    <span id="predModelUpdated">Updated: --</span>
+                </div>
+            </div>
+
+            <!-- KPI Forecast Cards -->
+            <div class="pred-grid">
+                <div class="pred-card" id="predDistress">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title">Distress Index</span>
+                        <span class="pred-trend" id="predDistressTrend">--</span>
+                    </div>
+                    <div class="pred-current">
+                        <span class="pred-label">Current</span>
+                        <span class="pred-value" id="predDistressCurrent">--</span>
+                    </div>
+                    <div class="pred-forecasts">
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">7d</span>
+                            <span class="pred-horizon-value" id="predDistress7d">--</span>
+                            <span class="pred-ci" id="predDistress7dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">14d</span>
+                            <span class="pred-horizon-value" id="predDistress14d">--</span>
+                            <span class="pred-ci" id="predDistress14dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">30d</span>
+                            <span class="pred-horizon-value" id="predDistress30d">--</span>
+                            <span class="pred-ci" id="predDistress30dCI"></span>
+                        </div>
+                    </div>
+                    <div class="pred-chart-wrap">
+                        <canvas id="predDistressChart" height="120"></canvas>
+                    </div>
+                </div>
+
+                <div class="pred-card" id="predTrigger">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title">Trigger Probability</span>
+                        <span class="pred-trend" id="predTriggerTrend">--</span>
+                    </div>
+                    <div class="pred-current">
+                        <span class="pred-label">Current</span>
+                        <span class="pred-value" id="predTriggerCurrent">--</span>
+                    </div>
+                    <div class="pred-forecasts">
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">7d</span>
+                            <span class="pred-horizon-value" id="predTrigger7d">--</span>
+                            <span class="pred-ci" id="predTrigger7dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">14d</span>
+                            <span class="pred-horizon-value" id="predTrigger14d">--</span>
+                            <span class="pred-ci" id="predTrigger14dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">30d</span>
+                            <span class="pred-horizon-value" id="predTrigger30d">--</span>
+                            <span class="pred-ci" id="predTrigger30dCI"></span>
+                        </div>
+                    </div>
+                    <div class="pred-chart-wrap">
+                        <canvas id="predTriggerChart" height="120"></canvas>
+                    </div>
+                </div>
+
+                <div class="pred-card" id="predContagion">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title">Contagion Risk</span>
+                        <span class="pred-trend" id="predContagionTrend">--</span>
+                    </div>
+                    <div class="pred-current">
+                        <span class="pred-label">Current</span>
+                        <span class="pred-value" id="predContagionCurrent">--</span>
+                    </div>
+                    <div class="pred-forecasts">
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">7d</span>
+                            <span class="pred-horizon-value" id="predContagion7d">--</span>
+                            <span class="pred-ci" id="predContagion7dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">14d</span>
+                            <span class="pred-horizon-value" id="predContagion14d">--</span>
+                            <span class="pred-ci" id="predContagion14dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">30d</span>
+                            <span class="pred-horizon-value" id="predContagion30d">--</span>
+                            <span class="pred-ci" id="predContagion30dCI"></span>
+                        </div>
+                    </div>
+                    <div class="pred-chart-wrap">
+                        <canvas id="predContagionChart" height="120"></canvas>
+                    </div>
+                </div>
+
+                <div class="pred-card" id="predVix">
+                    <div class="pred-card-header">
+                        <span class="pred-card-title">VIX Level</span>
+                        <span class="pred-trend" id="predVixTrend">--</span>
+                    </div>
+                    <div class="pred-current">
+                        <span class="pred-label">Current</span>
+                        <span class="pred-value" id="predVixCurrent">--</span>
+                    </div>
+                    <div class="pred-forecasts">
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">7d</span>
+                            <span class="pred-horizon-value" id="predVix7d">--</span>
+                            <span class="pred-ci" id="predVix7dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">14d</span>
+                            <span class="pred-horizon-value" id="predVix14d">--</span>
+                            <span class="pred-ci" id="predVix14dCI"></span>
+                        </div>
+                        <div class="pred-horizon">
+                            <span class="pred-horizon-label">30d</span>
+                            <span class="pred-horizon-value" id="predVix30d">--</span>
+                            <span class="pred-ci" id="predVix30dCI"></span>
+                        </div>
+                    </div>
+                    <div class="pred-chart-wrap">
+                        <canvas id="predVixChart" height="120"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anomaly Classifications -->
+            <div class="pred-section">
+                <div class="pred-section-title">Anomaly Classifications</div>
+                <div class="pred-anomaly-grid" id="predAnomalyGrid">
+                    <div class="pred-anomaly-card">
+                        <span class="pred-anomaly-kpi">Distress Index</span>
+                        <span class="pred-anomaly-type" id="anomalyDistress">--</span>
+                        <span class="pred-anomaly-conf" id="anomalyDistressConf"></span>
+                    </div>
+                    <div class="pred-anomaly-card">
+                        <span class="pred-anomaly-kpi">Trigger Probability</span>
+                        <span class="pred-anomaly-type" id="anomalyTrigger">--</span>
+                        <span class="pred-anomaly-conf" id="anomalyTriggerConf"></span>
+                    </div>
+                    <div class="pred-anomaly-card">
+                        <span class="pred-anomaly-kpi">Contagion Risk</span>
+                        <span class="pred-anomaly-type" id="anomalyContagion">--</span>
+                        <span class="pred-anomaly-conf" id="anomalyContagionConf"></span>
+                    </div>
+                    <div class="pred-anomaly-card">
+                        <span class="pred-anomaly-kpi">VIX Level</span>
+                        <span class="pred-anomaly-type" id="anomalyVix">--</span>
+                        <span class="pred-anomaly-conf" id="anomalyVixConf"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backtest Results -->
+            <div class="pred-section">
+                <div class="pred-section-title">Model Accuracy (Backtesting)</div>
+                <div class="pred-backtest-table">
+                    <table class="fn-table" id="backtestTable">
+                        <thead>
+                            <tr>
+                                <th>KPI</th>
+                                <th>Horizon</th>
+                                <th>MAE</th>
+                                <th>RMSE</th>
+                                <th>MAPE</th>
+                                <th>Direction</th>
+                                <th>Grade</th>
+                            </tr>
+                        </thead>
+                        <tbody id="backtestBody">
+                            <tr><td colspan="7" style="text-align:center;color:#666;">Awaiting backtest data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1172,6 +1468,18 @@
                 // SRE Observatory data
                 if (dashboard === 'sre_observatory') {
                     updateSREDashboard(payload);
+                }
+                // Predictions tab data (S6-03)
+                if (dashboard === 'predictions') {
+                    if (panel === 'kpi_forecasts' || !panel) {
+                        updatePredictionsDashboard(payload);
+                    }
+                    if (panel === 'anomaly_classifications') {
+                        updateAnomalyClassifications(payload);
+                    }
+                    if (panel === 'backtest_results') {
+                        updateBacktestResults(payload);
+                    }
                 }
                 if (dashboard === 'sovereign_dominoes' && panel === 'contagion_paths') {
                     if (payload.path_count !== undefined) {
@@ -1664,6 +1972,216 @@
                 }
             });
         }
+
+        // === Predictions Tab (S6-03) ===
+        const predCharts = {};
+        const PRED_KPI_MAP = {
+            distress_index: { prefix: 'predDistress', color: '#ff6b6b', label: 'Distress Index' },
+            trigger_probability: { prefix: 'predTrigger', color: '#ffd700', label: 'Trigger Prob' },
+            contagion_risk: { prefix: 'predContagion', color: '#ff8c42', label: 'Contagion Risk' },
+            vix_level: { prefix: 'predVix', color: '#00d9ff', label: 'VIX Level' },
+        };
+
+        const ANOMALY_COLORS = {
+            structural_break: '#ff4444',
+            volatility_spike: '#ffd700',
+            mean_reversion: '#00ff41',
+            regime_change: '#ff8c42',
+            outlier: '#888',
+            insufficient_data: '#444',
+        };
+
+        function updatePredictionsDashboard(payload) {
+            if (!payload) return;
+            const kpis = payload.kpis || {};
+            const ts = payload.timestamp || '';
+
+            // Update model banner
+            const el = document.getElementById('predModelUpdated');
+            if (el && ts) el.textContent = 'Updated: ' + new Date(ts).toLocaleTimeString();
+
+            for (const [kpi, data] of Object.entries(kpis)) {
+                const cfg = PRED_KPI_MAP[kpi];
+                if (!cfg || data.status !== 'ok') continue;
+
+                // Current value
+                const curEl = document.getElementById(cfg.prefix + 'Current');
+                if (curEl) curEl.textContent = formatNumber(data.current_value);
+
+                // Trend badge
+                const trendEl = document.getElementById(cfg.prefix + 'Trend');
+                if (trendEl) {
+                    trendEl.textContent = data.trend || '--';
+                    trendEl.className = 'pred-trend ' + (data.trend || 'stable');
+                }
+
+                // Horizon forecasts
+                const forecasts = data.forecasts || {};
+                for (const [hKey, hData] of Object.entries(forecasts)) {
+                    const days = hKey.replace('d', '');
+                    const valEl = document.getElementById(cfg.prefix + days + 'd');
+                    const ciEl = document.getElementById(cfg.prefix + days + 'dCI');
+                    if (valEl) valEl.textContent = formatNumber(hData.point_estimate);
+                    if (ciEl) {
+                        const lo = formatNumber(hData.ci_95_lower);
+                        const hi = formatNumber(hData.ci_95_upper);
+                        ciEl.textContent = lo + ' – ' + hi;
+                    }
+                }
+
+                // Prediction chart with confidence bands
+                initPredChart(kpi, cfg, data);
+            }
+        }
+
+        function initPredChart(kpi, cfg, data) {
+            const canvasId = cfg.prefix + 'Chart';
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+
+            if (predCharts[kpi]) predCharts[kpi].destroy();
+
+            const forecasts = data.forecasts || {};
+            const labels = ['Now', '7d', '14d', '30d'];
+            const points = [data.current_value];
+            const upperBand = [data.current_value];
+            const lowerBand = [data.current_value];
+
+            for (const h of ['7d', '14d', '30d']) {
+                const hd = forecasts[h] || {};
+                points.push(hd.point_estimate || null);
+                upperBand.push(hd.ci_95_upper || null);
+                lowerBand.push(hd.ci_95_lower || null);
+            }
+
+            predCharts[kpi] = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '95% CI Upper',
+                            data: upperBand,
+                            borderColor: 'transparent',
+                            backgroundColor: cfg.color + '15',
+                            fill: '+1',
+                            pointRadius: 0,
+                            tension: 0.3,
+                        },
+                        {
+                            label: 'Forecast',
+                            data: points,
+                            borderColor: cfg.color,
+                            backgroundColor: cfg.color + '33',
+                            borderWidth: 2,
+                            pointRadius: 4,
+                            pointBackgroundColor: cfg.color,
+                            tension: 0.3,
+                            fill: false,
+                        },
+                        {
+                            label: '95% CI Lower',
+                            data: lowerBand,
+                            borderColor: 'transparent',
+                            backgroundColor: cfg.color + '15',
+                            fill: '-1',
+                            pointRadius: 0,
+                            tension: 0.3,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    return ctx.dataset.label + ': ' + formatNumber(ctx.raw);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            grid: { color: '#1e274933', drawBorder: false },
+                            ticks: { color: '#555', font: { size: 10 } },
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#888', font: { size: 10 } },
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateAnomalyClassifications(payload) {
+            if (!payload || !payload.classifications) return;
+
+            const kpiElMap = {
+                distress_index: 'anomalyDistress',
+                trigger_probability: 'anomalyTrigger',
+                contagion_risk: 'anomalyContagion',
+                vix_level: 'anomalyVix',
+            };
+
+            for (const [kpi, cls] of Object.entries(payload.classifications)) {
+                const elId = kpiElMap[kpi];
+                if (!elId) continue;
+
+                const typeEl = document.getElementById(elId);
+                const confEl = document.getElementById(elId + 'Conf');
+
+                if (typeEl) {
+                    const meta = cls.metadata || {};
+                    typeEl.textContent = (meta.emoji || '') + ' ' + (meta.label || cls.type);
+                    typeEl.style.color = ANOMALY_COLORS[cls.type] || '#888';
+                }
+                if (confEl) {
+                    confEl.textContent = 'Confidence: ' + ((cls.confidence || 0) * 100).toFixed(0) + '%';
+                }
+            }
+        }
+
+        function updateBacktestResults(payload) {
+            if (!payload || !payload.kpis) return;
+
+            const healthEl = document.getElementById('predModelHealth');
+            if (healthEl) healthEl.textContent = (payload.model_health_score || 0) + '/100';
+
+            const tbody = document.getElementById('backtestBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            const kpiLabels = {
+                distress_index: 'Distress Index',
+                trigger_probability: 'Trigger Prob',
+                contagion_risk: 'Contagion Risk',
+                vix_level: 'VIX Level',
+            };
+
+            for (const [kpi, result] of Object.entries(payload.kpis)) {
+                if (result.status !== 'ok') continue;
+                for (const [horizon, hData] of Object.entries(result.horizons || {})) {
+                    const m = hData.metrics;
+                    if (!m) continue;
+                    const gradeColors = { A: '#00ff41', B: '#00d9ff', C: '#ffd700', D: '#ff8c42', F: '#ff4444' };
+                    const tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td>' + (kpiLabels[kpi] || kpi) + '</td>' +
+                        '<td>' + horizon + '</td>' +
+                        '<td>' + (m.mae != null ? m.mae.toFixed(3) : '--') + '</td>' +
+                        '<td>' + (m.rmse != null ? m.rmse.toFixed(3) : '--') + '</td>' +
+                        '<td>' + (m.mape != null ? m.mape.toFixed(1) + '%' : '--') + '</td>' +
+                        '<td>' + (m.directional_accuracy_pct != null ? m.directional_accuracy_pct.toFixed(0) + '%' : '--') + '</td>' +
+                        '<td style="color:' + (gradeColors[hData.grade] || '#888') + ';font-weight:700;">' + (hData.grade || '--') + '</td>';
+                    tbody.appendChild(tr);
+                }
+            }
+        }
+        // === End Predictions Tab ===
 
         // Initialize
         updateTimestamp();

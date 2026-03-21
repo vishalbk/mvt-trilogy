@@ -168,6 +168,42 @@ resource "google_bigquery_table" "daily_summary" {
   }
 }
 
+# Materialized view for weekly aggregations (S6-06)
+resource "google_bigquery_table" "weekly_aggregation" {
+  dataset_id          = google_bigquery_dataset.mvt_analytics.dataset_id
+  table_id            = "weekly_aggregation"
+  project             = var.project_id
+  deletion_protection = false
+
+  materialized_view {
+    query = file("${path.module}/views/weekly_aggregation.sql")
+  }
+
+  labels = {
+    view_type = "materialized"
+    purpose   = "trend-analysis"
+    sprint    = "s6"
+  }
+}
+
+# Materialized view for monthly aggregations (S6-06)
+resource "google_bigquery_table" "monthly_aggregation" {
+  dataset_id          = google_bigquery_dataset.mvt_analytics.dataset_id
+  table_id            = "monthly_aggregation"
+  project             = var.project_id
+  deletion_protection = false
+
+  materialized_view {
+    query = file("${path.module}/views/monthly_aggregation.sql")
+  }
+
+  labels = {
+    view_type = "materialized"
+    purpose   = "executive-reporting"
+    sprint    = "s6"
+  }
+}
+
 output "dataset_id" {
   value = google_bigquery_dataset.mvt_analytics.dataset_id
 }
