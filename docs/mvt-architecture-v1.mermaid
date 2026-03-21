@@ -20,10 +20,10 @@ graph TB
             YFIN["mvt-yfinance-streamer<br/>rate(5 min)"]
         end
 
-        subgraph PROCESSING["Layer 2: Processing (5 Lambdas)"]
+        subgraph PROCESSING["Layer 2: Processing (5 Lambdas) — EV2 Enhanced"]
             style PROCESSING fill:#1a0a2d,stroke:#9966ff
-            SENT["mvt-sentiment-aggregator"]
-            INEQ["mvt-inequality-scorer"]
+            SENT["mvt-sentiment-aggregator<br/>🆕 market_metrics + sector_sentiment"]
+            INEQ["mvt-inequality-scorer<br/>🆕 fred_kpis panel"]
             CONT["mvt-contagion-modeler"]
             VULN["mvt-vulnerability-composite"]
             ROUTER["mvt-cross-dashboard-router"]
