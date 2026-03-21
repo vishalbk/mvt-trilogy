@@ -35,7 +35,22 @@ graph TB
             HAPI["mvt-history-api<br/>GET /api/history"]
         end
 
-        subgraph REALTIME["Layer 4: Realtime"]
+        subgraph SRE["Layer 4: SRE Observatory (NEW - Sprint EV3)"]
+            style SRE fill:#2d2d0a,stroke:#ffd700
+            HEALTH["mvt-health-check<br/>rate(15 min)"]
+            COST["mvt-cost-tracker<br/>rate(1 hour)"]
+            PERF["mvt-perf-baseline<br/>rate(6 hours)"]
+            CAP["mvt-capacity-planner<br/>rate(6 hours)"]
+        end
+
+        subgraph ANALYTICS["Layer 5: Analytics & Predictions (NEW - Sprint EV3)"]
+            style ANALYTICS fill:#0a2d1a,stroke:#00ff41
+            PREDICT["mvt-distress-predictor<br/>rate(6 hours)"]
+            BACKTEST["mvt-backtester<br/>rate(1 day)"]
+            ANOMALY["mvt-anomaly-classifier<br/>rate(6 hours)"]
+        end
+
+        subgraph REALTIME["Layer 6: Realtime"]
             style REALTIME fill:#0a0a2d,stroke:#6666ff
             WSCONN["mvt-ws-connect"]
             WSDISC["mvt-ws-disconnect"]
@@ -115,6 +130,22 @@ graph TB
     INEQ -->|"write state"| DSTATE
     CONT -->|"write state"| DSTATE
     VULN -->|"write state"| DSTATE
+
+    EB -->|"schedule"| HEALTH
+    EB -->|"schedule"| COST
+    EB -->|"schedule"| PERF
+    EB -->|"schedule"| CAP
+    EB -->|"schedule"| PREDICT
+    EB -->|"schedule"| BACKTEST
+    EB -->|"schedule"| ANOMALY
+
+    HEALTH -->|"write state"| DSTATE
+    COST -->|"write state"| DSTATE
+    PERF -->|"write state"| DSTATE
+    CAP -->|"write state"| DSTATE
+    PREDICT -->|"write state"| DSTATE
+    BACKTEST -->|"write state"| DSTATE
+    ANOMALY -->|"write state"| DSTATE
 
     DSTATE -->|"Stream"| WSBCAST
     DSTATE -->|"Stream"| HWRITER
